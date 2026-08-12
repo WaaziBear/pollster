@@ -13,6 +13,10 @@ import { normalizeEmail } from "@/lib/utils";
  */
 export const { handlers, auth, signIn, signOut } = NextAuth({
   ...authConfig,
+  // Trust the deployment host's forwarded headers (X-Forwarded-Host) so
+  // Auth.js resolves callback URLs correctly behind Vercel's proxy without
+  // hardcoding AUTH_URL. Provider-agnostic for any hosting platform.
+  trustHost: true,
   providers: [
     Credentials({
       credentials: {

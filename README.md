@@ -91,7 +91,8 @@ See [`.env.example`](./.env.example). Never commit a real `.env`.
 
 | Variable          | Required | Purpose                                             |
 | ----------------- | -------- | --------------------------------------------------- |
-| `DATABASE_URL`    | yes      | PostgreSQL connection string used by Prisma         |
+| `DATABASE_URL`    | yes      | PostgreSQL connection string (POOLED in production) |
+| `DIRECT_URL`      | yes      | Direct (non-pooled) connection for migrations       |
 | `AUTH_SECRET`     | yes      | Secret used to sign/encrypt session JWTs            |
 | `AUTH_URL`        | no       | App base URL for Auth.js callbacks (prod)           |
 | `RESEND_API_KEY`  | no       | Resend API key — enables real invite email delivery |
@@ -115,6 +116,7 @@ invite from being created.
 | ---------------------- | ---------------------------------------------- |
 | `npm run dev`          | Start the dev server                           |
 | `npm run build`        | `prisma generate` + `next build`               |
+| `npm run vercel-build` | `prisma generate` + `migrate deploy` + `build` (used by Vercel) |
 | `npm run start`        | Start the production server                    |
 | `npm run lint`         | ESLint (next lint)                             |
 | `npm run typecheck`    | `tsc --noEmit`                                 |
@@ -155,8 +157,41 @@ tests/                     # Vitest unit tests
 
 ## Deployment
 
-1. Provision a PostgreSQL database and set `DATABASE_URL` + `AUTH_SECRET`
-   (and `AUTH_URL`) in the host environment.
+### Vercel (provider-agnostic Postgres)
+
+The app deploys to Vercel with any pooled-connection Postgres provider —
+**Neon**, **Supabase**, or **Vercel Postgres** all work. There is no hard
+dependency on a specific provider or on Prisma Accelerate.
+
+1. **Import the repo** into Vercel (New Project → import from GitHub). Next.js
+   is auto-detected; no `vercel.json` is required.
+2. **Set environment variables** in the Vercel dashboard (Project → Settings →
+   Environment Variables):
+
+   | Variable         | Value                                                            |
+   | ---------------- | ---------------------------------------------------------------- |
+   | `DATABASE_URL`   | **Pooled** connection string (Neon pooler / Supabase pgbouncer / Vercel Postgres). Used at runtime by serverless functions. |
+   | `DIRECT_URL`     | **Direct** (non-pooled) connection string. Used only for migrations. |
+   | `AUTH_SECRET`    | A **freshly generated** secret (`npx auth secret` or `openssl rand -base64 32`). **Do NOT reuse the local dev placeholder.** |
+   | `AUTH_URL`       | Optional. `trustHost: true` is enabled so Auth.js resolves the host from Vercel's forwarded headers; set this to your Vercel URL only if you need to pin it. |
+   | `RESEND_API_KEY` | Optional — enables real invite email delivery.                   |
+   | `EMAIL_FROM`     | Optional — verified Resend sender address.                       |
+
+3. **Migrations run automatically on deploy.** Vercel prefers the `vercel-build`
+   script when present, which runs
+   `prisma generate && prisma migrate deploy && next build`. `prisma migrate
+   deploy` applies pending migrations against `DIRECT_URL`. (The local `build`
+   script is unchanged and does **not** run migrations.)
+4. Push to the connected branch — Vercel builds, migrates, and deploys.
+
+> **Security:** Never reuse local `.env` values in production. Generate a new
+> `AUTH_SECRET` for the deployed environment and keep all connection strings in
+> the Vercel dashboard, not in the repo.
+
+### Generic host (non-Vercel)
+
+1. Provision a PostgreSQL database and set `DATABASE_URL`, `DIRECT_URL`, and
+   `AUTH_SECRET` (and `AUTH_URL` if needed) in the host environment.
 2. Run `npm ci && npm run prisma:deploy` to apply migrations.
 3. `npm run build && npm run start`.
 
