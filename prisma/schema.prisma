@@ -1,0 +1,149 @@
+// Polling App — Prisma schema
+// Extensible poll/question model: QuestionType enum + per-question JSON config
+// + normalized options/answers so new question types need no destructive migration.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum QuestionType {
+  SINGLE_CHOICE // radio
+  MULTI_CHOICE // checkbox
+  FREE_TEXT // short answer
+  RATING // numeric scale
+  // extensible: add DATE, RANKING, etc. later — no schema break
+}
+
+enum InviteStatus {
+  PENDING
+  ACCEPTED
+  REVOKED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  polls     Poll[]     @relation("PollCreator")
+  invites   Invite[] // invites linked to this user once matched by email
+  responses Response[]
+}
+
+model Poll {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  isPublished Boolean  @default(false) // draft vs open for answers
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  creatorId String
+  creator   User   @relation("PollCreator", fields: [creatorId], references: [id], onDelete: Cascade)
+
+  questions Question[]
+  invites   Invite[]
+  responses Response[]
+
+  @@index([creatorId])
+}
+
+model Question {
+  id       String       @id @default(cuid())
+  pollId   String
+  poll     Poll         @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  type     QuestionType
+  prompt   String
+  required Boolean      @default(false)
+  order    Int // display ordering within poll
+  // Type-specific settings held as JSON so new types need no migration.
+  // e.g. RATING    -> { "min":1, "max":5, "step":1, "labels":{...} }
+  //      FREE_TEXT -> { "maxLength":500 }
+  //      MULTI_CHOICE -> { "maxSelections": 3 }
+  config   Json?
+
+  options QuestionOption[]
+  answers Answer[]
+
+  @@index([pollId])
+}
+
+model QuestionOption {
+  id          String         @id @default(cuid())
+  questionId  String
+  question    Question       @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  label       String
+  order       Int
+  answerLinks AnswerOption[]
+
+  @@index([questionId])
+}
+
+model Invite {
+  id        String       @id @default(cuid())
+  pollId    String
+  poll      Poll         @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  email     String // normalized lower-case
+  status    InviteStatus @default(PENDING)
+  token     String       @unique @default(cuid()) // for optional invite link
+  createdAt DateTime     @default(now())
+
+  // Linked once the email owns an account (at signup OR invite time if already registered).
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([pollId, email]) // one invite per email per poll
+  @@index([email])
+  @@index([userId])
+}
+
+model Response {
+  id           String   @id @default(cuid())
+  pollId       String
+  poll         Poll     @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  respondentId String
+  respondent   User     @relation(fields: [respondentId], references: [id], onDelete: Cascade)
+  submittedAt  DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  answers Answer[]
+
+  @@unique([pollId, respondentId]) // one submission per user per poll (edit-in-place)
+  @@index([pollId])
+}
+
+model Answer {
+  id         String   @id @default(cuid())
+  responseId String
+  response   Response @relation(fields: [responseId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  // Type-specific value storage (only the relevant field is populated):
+  textValue   String? // FREE_TEXT
+  numberValue Int? // RATING
+  // choice answers (single or multi) via join table below:
+  selectedOptions AnswerOption[]
+
+  @@unique([responseId, questionId])
+  @@index([questionId])
+}
+
+model AnswerOption {
+  id       String         @id @default(cuid())
+  answerId String
+  answer   Answer         @relation(fields: [answerId], references: [id], onDelete: Cascade)
+  optionId String
+  option   QuestionOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+
+  @@unique([answerId, optionId])
+  @@index([optionId])
+}

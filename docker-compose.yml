@@ -1,0 +1,21 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: polling-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: polling
+      POSTGRES_PASSWORD: polling
+      POSTGRES_DB: polling
+    ports:
+      - "5432:5432"
+    volumes:
+      - polling_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U polling -d polling"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  polling_pgdata:

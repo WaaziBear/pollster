@@ -1,0 +1,115 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Design tokens — ui-ux-pro-max "Micro-interactions" system for Polling App.
+   Brand: teal focus (#0D9488 family) + action orange (#EA580C) CTA, per the
+   generated design system. WCAG-AA contrast, full light + dark support.
+   Semantic HSL tokens consumed by tailwind.config.ts. */
+@layer base {
+  :root {
+    /* Surfaces: teal-tinted background (#F0FDFA) with elevated white cards. */
+    --background: 166 77% 97%; /* #F0FDFA teal-50 */
+    --foreground: 175 61% 19%; /* #134E4A teal-900 */
+
+    --card: 0 0% 100%;
+    --card-foreground: 175 61% 19%;
+
+    /* Brand teal. Deepened one step to teal-700 so white label text clears
+       WCAG-AA 4.5:1 (generated #0D9488 + white is only 3.75:1). */
+    --primary: 175 78% 26%; /* #0F766E */
+    --primary-foreground: 0 0% 100%;
+
+    /* Low-emphasis teal surface (shadcn secondary semantics). */
+    --secondary: 168 52% 90%;
+    --secondary-foreground: 175 61% 19%;
+
+    --muted: 186 32% 92%; /* ≈ #E8F1F4 */
+    --muted-foreground: 186 24% 33%;
+
+    /* Subtle teal hover surface (shadcn accent semantics — used by
+       ghost/outline hover states across all components). */
+    --accent: 172 46% 88%;
+    --accent-foreground: 175 61% 19%;
+
+    --destructive: 0 74% 44%; /* ≈ #DC2626, deepened for white-text AA */
+    --destructive-foreground: 0 0% 100%;
+    /* On-surface error TEXT (not fills). ≈ #C11919 → ~6:1 on white/teal-50 bg.
+       Kept separate from --destructive so solid red buttons keep white-on-red. */
+    --destructive-text: 0 77% 42%;
+
+    --border: 174 44% 80%; /* soft teal (from #99F6E4) */
+    --input: 174 40% 74%;
+    --ring: 175 80% 30%; /* brand teal focus ring */
+
+    /* Action / CTA orange (#EA580C family). Deepened to orange-700 so white
+       label text clears 4.5:1 (raw #EA580C + white is 3.56:1). */
+    --cta: 21 90% 40%;
+    --cta-foreground: 0 0% 100%;
+
+    /* Success (published / answered / saved). Token-driven, both themes. */
+    --success: 162 84% 26%;
+    --success-foreground: 0 0% 100%;
+
+    --radius: 0.75rem;
+  }
+
+  .dark {
+    --background: 185 42% 8%;
+    --foreground: 166 40% 95%;
+
+    --card: 185 38% 11%;
+    --card-foreground: 166 40% 95%;
+
+    /* Brighter teal reads on dark; dark label text keeps AA. */
+    --primary: 172 66% 48%;
+    --primary-foreground: 185 45% 10%;
+
+    --secondary: 185 28% 18%;
+    --secondary-foreground: 166 40% 95%;
+
+    --muted: 185 26% 16%;
+    --muted-foreground: 175 20% 70%;
+
+    --accent: 185 28% 18%;
+    --accent-foreground: 166 40% 95%;
+
+    --destructive: 0 62% 48%;
+    --destructive-foreground: 0 0% 100%;
+    /* Lightened inline error TEXT for dark surfaces (≈ #F08A8A).
+       lum≈0.34 → ~6:1 on --card, ~8:1 on --background. */
+    --destructive-text: 0 82% 74%;
+
+    --border: 185 24% 22%;
+    --input: 185 24% 26%;
+    --ring: 172 66% 48%;
+
+    /* Bright orange on dark; near-black label text keeps AA. */
+    --cta: 24 95% 53%;
+    --cta-foreground: 20 90% 10%;
+
+    --success: 158 62% 42%;
+    --success-foreground: 158 60% 8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+}
+
+/* Respect reduced-motion preferences (researcher UX guideline). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
