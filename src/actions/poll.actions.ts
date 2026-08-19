@@ -8,40 +8,33 @@ import { pollSchema, type PollInput } from "@/lib/validation/poll";
 import { ActionResult, fail, ok } from "@/types/actions";
 
 /**
- * Persist questions (+ options) for a poll inside a transaction. Used by both
- * create and update. On update we replace questions wholesale (simplest correct
- * approach; cascades remove old options/answers).
+ * Pure mapping from validated questions to the nested `create` payload for a
+ * poll write. Used by both create and update so a single round-trip nested
+ * write persists all questions (+ options) atomically — avoiding the per-question
+ * round-trips that previously blew the interactive-transaction timeout.
  */
-async function writeQuestions(
-  tx: Parameters<Parameters<typeof prisma.$transaction>[0]>[0],
-  pollId: string,
+function buildQuestionsCreate(
   questions: PollInput["questions"]
-) {
-  for (let i = 0; i < questions.length; i++) {
-    const q = questions[i];
-    await tx.question.create({
-      data: {
-        pollId,
-        type: q.type,
-        prompt: q.prompt,
-        required: q.required,
-        order: i,
-        config:
-          q.config === undefined
-            ? undefined
-            : (q.config as Prisma.InputJsonValue),
-        options:
-          q.type === "SINGLE_CHOICE" || q.type === "MULTI_CHOICE"
-            ? {
-                create: q.options.map((o, oi) => ({
-                  label: o.label,
-                  order: oi,
-                })),
-              }
-            : undefined,
-      },
-    });
-  }
+): Prisma.QuestionCreateWithoutPollInput[] {
+  return questions.map((q, i) => ({
+    type: q.type,
+    prompt: q.prompt,
+    required: q.required,
+    order: i,
+    config:
+      q.config === undefined
+        ? undefined
+        : (q.config as Prisma.InputJsonValue),
+    options:
+      q.type === "SINGLE_CHOICE" || q.type === "MULTI_CHOICE"
+        ? {
+            create: q.options.map((o, oi) => ({
+              label: o.label,
+              order: oi,
+            })),
+          }
+        : undefined,
+  }));
 }
 
 export async function createPollAction(
@@ -57,21 +50,22 @@ export async function createPollAction(
 
   const data = parsed.data;
 
-  const pollId = await prisma.$transaction(async (tx) => {
-    const poll = await tx.poll.create({
-      data: {
-        title: data.title,
-        description: data.description || null,
-        isPublished: data.isPublished,
-        creatorId: user.id,
-      },
-    });
-    await writeQuestions(tx, poll.id, data.questions);
-    return poll.id;
+  // Single nested write: poll + all questions (+ options) persist atomically in
+  // one round-trip. No interactive $transaction, so no cross-region latency can
+  // exceed the 5000ms interactive-transaction budget.
+  const poll = await prisma.poll.create({
+    data: {
+      title: data.title,
+      description: data.description || null,
+      isPublished: data.isPublished,
+      creatorId: user.id,
+      questions: { create: buildQuestionsCreate(data.questions) },
+    },
+    select: { id: true },
   });
 
   revalidatePath("/dashboard");
-  return ok({ pollId });
+  return ok({ pollId: poll.id });
 }
 
 export async function updatePollAction(
@@ -94,18 +88,20 @@ export async function updatePollAction(
   }
   const data = parsed.data;
 
-  await prisma.$transaction(async (tx) => {
-    await tx.poll.update({
-      where: { id: pollId },
-      data: {
-        title: data.title,
-        description: data.description || null,
-        isPublished: data.isPublished,
+  // Single nested write: Prisma applies the nested deleteMany-then-create
+  // atomically in one round-trip, replacing questions wholesale (cascades remove
+  // old options/answers) without an interactive $transaction.
+  await prisma.poll.update({
+    where: { id: pollId },
+    data: {
+      title: data.title,
+      description: data.description || null,
+      isPublished: data.isPublished,
+      questions: {
+        deleteMany: {},
+        create: buildQuestionsCreate(data.questions),
       },
-    });
-    // Replace questions wholesale (cascades delete old options/answers).
-    await tx.question.deleteMany({ where: { pollId } });
-    await writeQuestions(tx, pollId, data.questions);
+    },
   });
 
   revalidatePath("/dashboard");

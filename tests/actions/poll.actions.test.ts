@@ -5,12 +5,9 @@ const guardsMock = vi.hoisted(() => ({
   requirePollOwner: vi.fn(),
 }));
 
-const txMock = vi.hoisted(() => ({
+const prismaMock = vi.hoisted(() => ({
   poll: { create: vi.fn(), update: vi.fn() },
-  question: { create: vi.fn(), deleteMany: vi.fn() },
 }));
-
-const prismaMock = vi.hoisted(() => ({ $transaction: vi.fn() }));
 
 vi.mock("@/lib/auth-guards", () => ({
   getSessionUser: guardsMock.getSessionUser,
@@ -39,11 +36,7 @@ const validPoll = {
 beforeEach(() => {
   vi.clearAllMocks();
   guardsMock.getSessionUser.mockResolvedValue(user);
-  txMock.poll.create.mockResolvedValue({ id: "poll1" });
-  txMock.question.create.mockResolvedValue({});
-  prismaMock.$transaction.mockImplementation(async (cb: (tx: unknown) => unknown) =>
-    cb(txMock)
-  );
+  prismaMock.poll.create.mockResolvedValue({ id: "poll1" });
 });
 
 describe("createPollAction", () => {
@@ -56,14 +49,14 @@ describe("createPollAction", () => {
   it("rejects invalid poll input (no questions)", async () => {
     const res = await createPollAction({ ...validPoll, questions: [] });
     expect(res.ok).toBe(false);
-    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+    expect(prismaMock.poll.create).not.toHaveBeenCalled();
   });
 
   it("persists the poll with the creator id and returns the new id", async () => {
     const res = await createPollAction(validPoll);
     expect(res.ok).toBe(true);
     if (res.ok) expect(res.data?.pollId).toBe("poll1");
-    expect(txMock.poll.create).toHaveBeenCalledWith(
+    expect(prismaMock.poll.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({ title: "Survey", creatorId: user.id }),
       })
@@ -72,34 +65,35 @@ describe("createPollAction", () => {
 
   it("creates one question row per question, preserving type and order", async () => {
     await createPollAction(validPoll);
-    expect(txMock.question.create).toHaveBeenCalledTimes(4);
+    expect(prismaMock.poll.create).toHaveBeenCalledTimes(1);
 
-    const types = txMock.question.create.mock.calls.map((c) => c[0].data.type);
+    const questions = prismaMock.poll.create.mock.calls[0][0].data.questions.create;
+    expect(questions).toHaveLength(4);
+
+    const types = questions.map((q: { type: string }) => q.type);
     expect(types).toEqual(["SINGLE_CHOICE", "MULTI_CHOICE", "FREE_TEXT", "RATING"]);
 
-    const orders = txMock.question.create.mock.calls.map((c) => c[0].data.order);
+    const orders = questions.map((q: { order: number }) => q.order);
     expect(orders).toEqual([0, 1, 2, 3]);
   });
 
   it("creates nested options only for choice questions", async () => {
     await createPollAction(validPoll);
-    const byType = new Map(
-      txMock.question.create.mock.calls.map((c) => [c[0].data.type, c[0].data])
-    );
+    const questions = prismaMock.poll.create.mock.calls[0][0].data.questions.create;
+    const byType = new Map(questions.map((q: { type: string }) => [q.type, q]));
     // choice types include nested option creates
-    expect(byType.get("SINGLE_CHOICE").options.create).toHaveLength(2);
-    expect(byType.get("MULTI_CHOICE").options.create).toHaveLength(2);
+    expect((byType.get("SINGLE_CHOICE") as { options: { create: unknown[] } }).options.create).toHaveLength(2);
+    expect((byType.get("MULTI_CHOICE") as { options: { create: unknown[] } }).options.create).toHaveLength(2);
     // non-choice types do not create options
-    expect(byType.get("FREE_TEXT").options).toBeUndefined();
-    expect(byType.get("RATING").options).toBeUndefined();
+    expect((byType.get("FREE_TEXT") as { options?: unknown }).options).toBeUndefined();
+    expect((byType.get("RATING") as { options?: unknown }).options).toBeUndefined();
   });
 
   it("persists per-type config for rating and multi-choice", async () => {
     await createPollAction(validPoll);
-    const byType = new Map(
-      txMock.question.create.mock.calls.map((c) => [c[0].data.type, c[0].data])
-    );
-    expect(byType.get("RATING").config).toEqual({ min: 1, max: 5 });
-    expect(byType.get("MULTI_CHOICE").config).toEqual({ maxSelections: 2 });
+    const questions = prismaMock.poll.create.mock.calls[0][0].data.questions.create;
+    const byType = new Map(questions.map((q: { type: string }) => [q.type, q]));
+    expect((byType.get("RATING") as { config: unknown }).config).toEqual({ min: 1, max: 5 });
+    expect((byType.get("MULTI_CHOICE") as { config: unknown }).config).toEqual({ maxSelections: 2 });
   });
 });
