@@ -189,3 +189,81 @@ describe("submitResponseAction - server-side answer validation", () => {
     if (!res.ok) expect(res.fieldErrors?.["q-req"]).toBeTruthy();
   });
 });
+
+describe("submitResponseAction - MULTI_CHOICE ranking", () => {
+  // Find the answer.create payload persisted for a given question.
+  function createDataFor(questionId: string) {
+    const call = txMock.answer.create.mock.calls.find(
+      (c) => (c[0] as { data: { questionId: string } }).data.questionId === questionId
+    );
+    return call?.[0].data;
+  }
+
+  it("persists NULL rank for a non-ranked multi-choice question", async () => {
+    const res = await submitResponseAction({
+      pollId: "poll1",
+      answers: [{ questionId: "q-multi", selectedOptionIds: ["m2", "m1"] }],
+    });
+    expect(res.ok).toBe(true);
+    const data = createDataFor("q-multi");
+    expect(data.selectedOptions.create).toEqual([
+      { optionId: "m2", rank: null },
+      { optionId: "m1", rank: null },
+    ]);
+  });
+
+  it("persists 1..N rank in submitted order when config.ranked is true", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({
+      id: "poll1",
+      isPublished: true,
+      creatorId: "user-owner",
+      questions: [
+        {
+          id: "q-ranked",
+          type: "MULTI_CHOICE",
+          required: false,
+          config: { ranked: true },
+          options: [{ id: "r1" }, { id: "r2" }, { id: "r3" }],
+        },
+      ],
+    });
+    const res = await submitResponseAction({
+      pollId: "poll1",
+      answers: [{ questionId: "q-ranked", selectedOptionIds: ["r3", "r1", "r2"] }],
+    });
+    expect(res.ok).toBe(true);
+    const data = createDataFor("q-ranked");
+    expect(data.selectedOptions.create).toEqual([
+      { optionId: "r3", rank: 1 },
+      { optionId: "r1", rank: 2 },
+      { optionId: "r2", rank: 3 },
+    ]);
+  });
+
+  it("dedupes selected ids preserving order before ranking", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({
+      id: "poll1",
+      isPublished: true,
+      creatorId: "user-owner",
+      questions: [
+        {
+          id: "q-ranked",
+          type: "MULTI_CHOICE",
+          required: false,
+          config: { ranked: true },
+          options: [{ id: "r1" }, { id: "r2" }, { id: "r3" }],
+        },
+      ],
+    });
+    const res = await submitResponseAction({
+      pollId: "poll1",
+      answers: [{ questionId: "q-ranked", selectedOptionIds: ["r2", "r1", "r2"] }],
+    });
+    expect(res.ok).toBe(true);
+    const data = createDataFor("q-ranked");
+    expect(data.selectedOptions.create).toEqual([
+      { optionId: "r2", rank: 1 },
+      { optionId: "r1", rank: 2 },
+    ]);
+  });
+});

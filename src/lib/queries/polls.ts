@@ -3,13 +3,24 @@ import type { SessionUser } from "@/lib/auth-guards";
 
 /** Polls created by the user, with counts for the dashboard cards. */
 export async function getMyPolls(userId: string) {
-  return prisma.poll.findMany({
+  const polls = await prisma.poll.findMany({
     where: { creatorId: userId },
     include: {
       _count: { select: { questions: true, invites: true, responses: true } },
+      // Whether the owner has answered their own (published) poll — drives the
+      // Answer vs "View / update answer" CTA on the dashboard card.
+      responses: {
+        where: { respondentId: userId },
+        select: { id: true },
+      },
     },
     orderBy: { updatedAt: "desc" },
   });
+
+  return polls.map((p) => ({
+    ...p,
+    hasResponded: p.responses.length > 0,
+  }));
 }
 
 /**
@@ -83,7 +94,12 @@ export async function getPollForRespondent(pollId: string, user: SessionUser) {
   const existingResponse = await prisma.response.findUnique({
     where: { pollId_respondentId: { pollId, respondentId: user.id } },
     include: {
-      answers: { include: { selectedOptions: true } },
+      // Order selected options by rank so re-editing a ranked MULTI_CHOICE
+      // answer preserves the previously chosen order (NULL ranks sort first,
+      // which is fine for non-ranked questions).
+      answers: {
+        include: { selectedOptions: { orderBy: { rank: "asc" } } },
+      },
     },
   });
 
@@ -138,7 +154,11 @@ export async function getResults(pollId: string) {
         include: {
           options: {
             orderBy: { order: "asc" },
-            include: { _count: { select: { answerLinks: true } } },
+            include: {
+              _count: { select: { answerLinks: true } },
+              // Ranks per selection (only meaningful for ranked MULTI_CHOICE).
+              answerLinks: { select: { rank: true } },
+            },
           },
           answers: {
             select: { textValue: true, numberValue: true },
@@ -153,6 +173,28 @@ export async function getResults(pollId: string) {
 
   const questions = poll.questions.map((q) => {
     if (q.type === "SINGLE_CHOICE" || q.type === "MULTI_CHOICE") {
+      const config = (q.config as Record<string, unknown> | null) ?? {};
+      const ranked = q.type === "MULTI_CHOICE" && config.ranked === true;
+
+      if (ranked) {
+        // Ranked MULTI_CHOICE: per-option selection count + mean of non-null ranks.
+        const options = q.options.map((o) => {
+          const ranks = o.answerLinks
+            .map((l) => l.rank)
+            .filter((r): r is number => r !== null && r !== undefined);
+          const count = o._count.answerLinks;
+          return {
+            id: o.id,
+            label: o.label,
+            count,
+            averageRank: ranks.length
+              ? ranks.reduce((s, r) => s + r, 0) / ranks.length
+              : null,
+          };
+        });
+        return { ...stripQuestion(q), kind: "rankedChoice" as const, options };
+      }
+
       const options = q.options.map((o) => ({
         id: o.id,
         label: o.label,

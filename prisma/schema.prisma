@@ -144,6 +144,9 @@ model AnswerOption {
   answer   Answer         @relation(fields: [answerId], references: [id], onDelete: Cascade)
   optionId String
   option   QuestionOption @relation(fields: [optionId], references: [id], onDelete: Cascade)
+  // Nullable 1-based rank for opt-in ranked MULTI_CHOICE (config.ranked).
+  // NULL for all non-ranked selections; additive/backward-compatible.
+  rank     Int?
 
   @@unique([answerId, optionId])
   @@index([optionId])

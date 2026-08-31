@@ -25,6 +25,7 @@ const configSchema = z
     maxLength: z.number().int().positive().max(10000).optional(),
     // MULTI_CHOICE
     maxSelections: z.number().int().positive().optional(),
+    ranked: z.boolean().optional(),
   })
   .partial()
   .passthrough()

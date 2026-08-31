@@ -59,11 +59,15 @@ export default async function ResultsPage({
                 <CardTitle className="text-base">
                   {i + 1}. {q.prompt}
                 </CardTitle>
-                <Badge variant="outline">{labelForType(q.type)}</Badge>
+                <Badge variant="outline">
+                  {labelForType(q.type)}
+                  {q.kind === "rankedChoice" ? " (ranked)" : ""}
+                </Badge>
               </div>
             </CardHeader>
             <CardContent>
               {q.kind === "choice" && <ChoiceResult options={q.options} total={q.total} />}
+              {q.kind === "rankedChoice" && <RankedChoiceResult options={q.options} />}
               {q.kind === "rating" && (
                 <RatingResult
                   count={q.count}
@@ -128,6 +132,50 @@ function ChoiceResult({
         );
       })}
       {options.length === 0 && (
+        <p className="text-sm text-muted-foreground">No options.</p>
+      )}
+    </div>
+  );
+}
+
+function RankedChoiceResult({
+  options,
+}: {
+  options: { id: string; label: string; count: number; averageRank: number | null }[];
+}) {
+  // Best (lowest) average rank first; options never chosen (null) sink to the end.
+  const sorted = [...options].sort((a, b) => {
+    if (a.averageRank === null && b.averageRank === null) return 0;
+    if (a.averageRank === null) return 1;
+    if (b.averageRank === null) return -1;
+    return a.averageRank - b.averageRank;
+  });
+
+  return (
+    <div className="space-y-2" role="list">
+      <p className="text-xs text-muted-foreground">
+        Ranked by average position (lower is better).
+      </p>
+      {sorted.map((o, i) => (
+        <div
+          key={o.id}
+          role="listitem"
+          className="flex items-center gap-3 rounded-md border bg-muted/40 p-3 text-sm"
+        >
+          <span
+            className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
+            aria-hidden
+          >
+            {i + 1}
+          </span>
+          <span className="flex-1">{o.label}</span>
+          <span className="text-muted-foreground">
+            avg {o.averageRank !== null ? o.averageRank.toFixed(2) : "—"} · {o.count}{" "}
+            {o.count === 1 ? "vote" : "votes"}
+          </span>
+        </div>
+      ))}
+      {sorted.length === 0 && (
         <p className="text-sm text-muted-foreground">No options.</p>
       )}
     </div>

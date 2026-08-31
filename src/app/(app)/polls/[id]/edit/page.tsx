@@ -39,6 +39,7 @@ export default async function EditPollPage({
         maxLength: typeof config.maxLength === "number" ? config.maxLength : 500,
         maxSelections:
           typeof config.maxSelections === "number" ? config.maxSelections : undefined,
+        ranked: config.ranked === true,
       };
     }),
   };

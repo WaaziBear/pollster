@@ -7,7 +7,10 @@ import { z } from "zod";
  */
 export const answerInputSchema = z.object({
   questionId: z.string().min(1),
-  // choice types (single => length 1, multi => length >= 0)
+  // choice types (single => length 1, multi => length >= 0).
+  // For ranked MULTI_CHOICE (config.ranked), the ARRAY ORDER of
+  // selectedOptionIds encodes rank: index 0 => rank 1, index 1 => rank 2, etc.
+  // maxSelections is still honored server-side.
   selectedOptionIds: z.array(z.string().min(1)).optional().default([]),
   // FREE_TEXT
   textValue: z.string().max(10000).optional(),

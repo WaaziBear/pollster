@@ -17,7 +17,7 @@ vi.mock("@/lib/auth-guards", () => ({
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { createPollAction } from "@/actions/poll.actions";
+import { createPollAction, updatePollAction } from "@/actions/poll.actions";
 
 const user = { id: "user-owner", email: "owner@example.com" };
 
@@ -95,5 +95,89 @@ describe("createPollAction", () => {
     const byType = new Map(questions.map((q: { type: string }) => [q.type, q]));
     expect((byType.get("RATING") as { config: unknown }).config).toEqual({ min: 1, max: 5 });
     expect((byType.get("MULTI_CHOICE") as { config: unknown }).config).toEqual({ maxSelections: 2 });
+  });
+
+  it("persists config.ranked=true for a ranked multi-choice question", async () => {
+    const rankedPoll = {
+      title: "Ranked survey",
+      description: "",
+      isPublished: true,
+      questions: [
+        {
+          type: "MULTI_CHOICE" as const,
+          prompt: "Rank these",
+          required: false,
+          options: [{ label: "A" }, { label: "B" }, { label: "C" }],
+          config: { maxSelections: 3, ranked: true },
+        },
+      ],
+    };
+    const res = await createPollAction(rankedPoll);
+    expect(res.ok).toBe(true);
+    const questions = prismaMock.poll.create.mock.calls[0][0].data.questions.create;
+    expect(questions[0].config).toEqual({ maxSelections: 3, ranked: true });
+  });
+});
+
+describe("updatePollAction", () => {
+  beforeEach(() => {
+    prismaMock.poll.update.mockResolvedValue({ id: "poll1" });
+  });
+
+  it("persists config.ranked=true through the nested replace write", async () => {
+    const rankedPoll = {
+      title: "Ranked survey",
+      description: "",
+      isPublished: true,
+      questions: [
+        {
+          type: "MULTI_CHOICE" as const,
+          prompt: "Rank these",
+          required: false,
+          options: [{ label: "A" }, { label: "B" }, { label: "C" }],
+          config: { maxSelections: 3, ranked: true },
+        },
+      ],
+    };
+    const res = await updatePollAction("poll1", rankedPoll);
+    expect(res.ok).toBe(true);
+    expect(prismaMock.poll.update).toHaveBeenCalledTimes(1);
+
+    const arg = prismaMock.poll.update.mock.calls[0][0];
+    expect(arg.where).toEqual({ id: "poll1" });
+    // Wholesale replace: old questions removed, new ones created in one write.
+    expect(arg.data.questions.deleteMany).toEqual({});
+    const questions = arg.data.questions.create;
+    expect(questions[0].config).toEqual({ maxSelections: 3, ranked: true });
+  });
+
+  it("toggling ranked OFF persists config without ranked (unranked multi-choice)", async () => {
+    const unrankedPoll = {
+      title: "Plain survey",
+      description: "",
+      isPublished: true,
+      questions: [
+        {
+          type: "MULTI_CHOICE" as const,
+          prompt: "Pick many",
+          required: false,
+          options: [{ label: "A" }, { label: "B" }],
+          config: { maxSelections: 2 },
+        },
+      ],
+    };
+    const res = await updatePollAction("poll1", unrankedPoll);
+    expect(res.ok).toBe(true);
+    const questions = prismaMock.poll.update.mock.calls[0][0].data.questions.create;
+    expect(questions[0].config).toEqual({ maxSelections: 2 });
+    expect((questions[0].config as Record<string, unknown>).ranked).toBeUndefined();
+  });
+
+  it("blocks a non-owner from updating", async () => {
+    const { AuthorizationError } = await import("@/lib/auth-guards");
+    guardsMock.requirePollOwner.mockRejectedValueOnce(new AuthorizationError("nope"));
+    const res = await updatePollAction("poll1", validPoll);
+    expect(res.ok).toBe(false);
+    expect(prismaMock.poll.update).not.toHaveBeenCalled();
   });
 });

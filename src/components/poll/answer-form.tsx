@@ -2,6 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { ArrowUp, ArrowDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -68,6 +69,19 @@ export function AnswerForm({
       return { ...v, [qid]: { ...v[qid], selectedOptionIds: next } };
     });
 
+  // Reorder a selected option within the rank list (ranked MULTI_CHOICE).
+  // dir = -1 moves up (better rank), +1 moves down.
+  const moveMulti = (qid: string, optionId: string, dir: -1 | 1) =>
+    setValues((v) => {
+      const ids = [...v[qid].selectedOptionIds];
+      const idx = ids.indexOf(optionId);
+      if (idx < 0) return v;
+      const target = idx + dir;
+      if (target < 0 || target >= ids.length) return v;
+      [ids[idx], ids[target]] = [ids[target], ids[idx]];
+      return { ...v, [qid]: { ...v[qid], selectedOptionIds: ids } };
+    });
+
   const submit = () => {
     setError(null);
     setFieldErrors({});
@@ -120,6 +134,7 @@ export function AnswerForm({
             onToggleMulti={(optionId, checked) =>
               toggleMulti(q.id, optionId, checked)
             }
+            onMoveMulti={(optionId, dir) => moveMulti(q.id, optionId, dir)}
             onText={(text) => setValue(q.id, { textValue: text })}
             onNumber={(n) => setValue(q.id, { numberValue: n })}
           />
@@ -167,6 +182,7 @@ function QuestionInput({
   disabled,
   onSelectSingle,
   onToggleMulti,
+  onMoveMulti,
   onText,
   onNumber,
 }: {
@@ -175,6 +191,7 @@ function QuestionInput({
   disabled: boolean;
   onSelectSingle: (optionId: string) => void;
   onToggleMulti: (optionId: string, checked: boolean) => void;
+  onMoveMulti: (optionId: string, dir: -1 | 1) => void;
   onText: (text: string) => void;
   onNumber: (n: number) => void;
 }) {
@@ -204,34 +221,86 @@ function QuestionInput({
         typeof q.config?.maxSelections === "number"
           ? (q.config.maxSelections as number)
           : undefined;
+      const ranked = q.config?.ranked === true;
+      const optionById = new Map(q.options.map((o) => [o.id, o]));
+      const selected = value.selectedOptionIds;
       return (
-        <div className="grid gap-2" role="group" aria-label={q.prompt}>
-          {maxSelections && (
-            <p className="text-xs text-muted-foreground">
-              Select up to {maxSelections}.
-            </p>
+        <div className="grid gap-3">
+          <div className="grid gap-2" role="group" aria-label={q.prompt}>
+            {maxSelections && (
+              <p className="text-xs text-muted-foreground">
+                Select up to {maxSelections}.
+              </p>
+            )}
+            {q.options.map((o) => {
+              const checked = selected.includes(o.id);
+              const atLimit =
+                !!maxSelections && !checked && selected.length >= maxSelections;
+              return (
+                <label
+                  key={o.id}
+                  className="flex items-center gap-3 text-sm cursor-pointer"
+                >
+                  <Checkbox
+                    checked={checked}
+                    disabled={disabled || atLimit}
+                    onCheckedChange={(v) => onToggleMulti(o.id, v === true)}
+                    id={`${q.id}-${o.id}`}
+                  />
+                  {o.label}
+                </label>
+              );
+            })}
+          </div>
+
+          {ranked && selected.length > 0 && (
+            <div className="grid gap-2 rounded-md border bg-muted/40 p-3">
+              <p className="text-xs font-medium text-muted-foreground">
+                Rank your selected options
+              </p>
+              <ol className="grid gap-2" role="list">
+                {selected.map((id, i) => {
+                  const label = optionById.get(id)?.label ?? id;
+                  return (
+                    <li
+                      key={id}
+                      className="flex items-center gap-3 rounded-md border bg-background p-2 text-sm"
+                    >
+                      <span
+                        className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground"
+                        aria-hidden
+                      >
+                        {i + 1}
+                      </span>
+                      <span className="flex-1">{label}</span>
+                      <div className="flex gap-1">
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={disabled || i === 0}
+                          aria-label={`Move ${label} up`}
+                          onClick={() => onMoveMulti(id, -1)}
+                        >
+                          <ArrowUp className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          disabled={disabled || i === selected.length - 1}
+                          aria-label={`Move ${label} down`}
+                          onClick={() => onMoveMulti(id, 1)}
+                        >
+                          <ArrowDown className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+            </div>
           )}
-          {q.options.map((o) => {
-            const checked = value.selectedOptionIds.includes(o.id);
-            const atLimit =
-              !!maxSelections &&
-              !checked &&
-              value.selectedOptionIds.length >= maxSelections;
-            return (
-              <label
-                key={o.id}
-                className="flex items-center gap-3 text-sm cursor-pointer"
-              >
-                <Checkbox
-                  checked={checked}
-                  disabled={disabled || atLimit}
-                  onCheckedChange={(v) => onToggleMulti(o.id, v === true)}
-                  id={`${q.id}-${o.id}`}
-                />
-                {o.label}
-              </label>
-            );
-          })}
         </div>
       );
     }

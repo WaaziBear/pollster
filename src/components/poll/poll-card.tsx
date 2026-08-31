@@ -8,6 +8,7 @@ export type MyPollCardData = {
   title: string;
   description: string | null;
   isPublished: boolean;
+  hasResponded: boolean;
   _count: { questions: number; invites: number; responses: number };
 };
 
@@ -39,6 +40,14 @@ export function MyPollCard({ poll }: { poll: MyPollCardData }) {
         <Button asChild size="sm" variant="outline">
           <Link href={`/polls/${poll.id}/invite`}>Invite</Link>
         </Button>
+        {/* Owners can answer their own poll once it's published; drafts stay read-only. */}
+        {poll.isPublished && (
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/polls/${poll.id}`}>
+              {poll.hasResponded ? "View / update answer" : "Answer"}
+            </Link>
+          </Button>
+        )}
         <Button asChild size="sm">
           <Link href={`/polls/${poll.id}/results`}>Results</Link>
         </Button>

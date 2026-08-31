@@ -107,6 +107,8 @@ export function QuestionEditor({
           allowMultiConfig={question.type === "MULTI_CHOICE"}
           maxSelections={question.maxSelections}
           onMaxSelectionsChange={(n) => set({ maxSelections: n })}
+          ranked={question.ranked ?? false}
+          onRankedChange={(v) => set({ ranked: v })}
         />
       )}
 
@@ -171,6 +173,8 @@ function ChoiceOptionsEditor({
   allowMultiConfig,
   maxSelections,
   onMaxSelectionsChange,
+  ranked,
+  onRankedChange,
 }: {
   options: DraftOption[];
   onUpdate: (id: string, label: string) => void;
@@ -179,6 +183,8 @@ function ChoiceOptionsEditor({
   allowMultiConfig: boolean;
   maxSelections?: number;
   onMaxSelectionsChange: (n: number | undefined) => void;
+  ranked: boolean;
+  onRankedChange: (v: boolean) => void;
 }) {
   return (
     <div className="space-y-2">
@@ -224,6 +230,13 @@ function ChoiceOptionsEditor({
               )
             }
           />
+          <label className="flex items-center gap-2 text-sm cursor-pointer w-fit pt-1">
+            <Checkbox
+              checked={ranked}
+              onCheckedChange={(v) => onRankedChange(v === true)}
+            />
+            Rank selected answers
+          </label>
         </div>
       )}
     </div>

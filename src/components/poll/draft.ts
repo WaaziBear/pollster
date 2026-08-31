@@ -13,6 +13,7 @@ export type DraftQuestion = {
   ratingMax: number;
   maxLength?: number;
   maxSelections?: number;
+  ranked?: boolean; // MULTI_CHOICE: opt-in ranking of selected options
 };
 
 export type DraftPoll = {

@@ -53,6 +53,8 @@ export async function submitResponseAction(
     textValue: string | null;
     numberValue: number | null;
     optionIds: string[];
+    // When true, optionIds order encodes rank (1-based); persisted on AnswerOption.
+    ranked: boolean;
   };
   const toPersist: ValidAnswer[] = [];
 
@@ -87,7 +89,7 @@ export async function submitResponseAction(
           addError("Invalid option selected.");
           break;
         }
-        toPersist.push({ questionId: q.id, textValue: null, numberValue: null, optionIds: ids });
+        toPersist.push({ questionId: q.id, textValue: null, numberValue: null, optionIds: ids, ranked: false });
         break;
       }
       case "MULTI_CHOICE": {
@@ -101,9 +103,11 @@ export async function submitResponseAction(
           addError(`Select at most ${maxSel} option(s).`);
           break;
         }
-        // de-dup
+        // Opt-in ranking: the client sends selectedOptionIds in rank order.
+        const ranked = config.ranked === true;
+        // de-dup, preserving selection/rank order
         const unique = Array.from(new Set(ids));
-        toPersist.push({ questionId: q.id, textValue: null, numberValue: null, optionIds: unique });
+        toPersist.push({ questionId: q.id, textValue: null, numberValue: null, optionIds: unique, ranked });
         break;
       }
       case "FREE_TEXT": {
@@ -113,7 +117,7 @@ export async function submitResponseAction(
           addError(`Answer must be at most ${maxLength} characters.`);
           break;
         }
-        toPersist.push({ questionId: q.id, textValue: text, numberValue: null, optionIds: [] });
+        toPersist.push({ questionId: q.id, textValue: text, numberValue: null, optionIds: [], ranked: false });
         break;
       }
       case "RATING": {
@@ -128,7 +132,7 @@ export async function submitResponseAction(
           addError(`Rating must be between ${min} and ${max}.`);
           break;
         }
-        toPersist.push({ questionId: q.id, textValue: null, numberValue: n, optionIds: [] });
+        toPersist.push({ questionId: q.id, textValue: null, numberValue: n, optionIds: [], ranked: false });
         break;
       }
       default:
@@ -159,7 +163,7 @@ export async function submitResponseAction(
           textValue: va.textValue,
           numberValue: va.numberValue,
           selectedOptions: va.optionIds.length
-            ? { create: va.optionIds.map((optionId) => ({ optionId })) }
+            ? { create: va.optionIds.map((optionId, i) => ({ optionId, rank: va.ranked ? i + 1 : null })) }
             : undefined,
         },
       });

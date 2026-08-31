@@ -24,6 +24,17 @@ describe("questionSchema per-type validation", () => {
     expect(questionSchema.safeParse(multiChoice).success).toBe(true);
   });
 
+  it("accepts a ranked multi-choice question (config.ranked)", () => {
+    const res = questionSchema.safeParse({
+      type: "MULTI_CHOICE",
+      prompt: "Rank these",
+      options: [{ label: "A" }, { label: "B" }, { label: "C" }],
+      config: { maxSelections: 3, ranked: true },
+    });
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data.config?.ranked).toBe(true);
+  });
+
   it("accepts a valid free-text question", () => {
     expect(questionSchema.safeParse(freeText).success).toBe(true);
   });

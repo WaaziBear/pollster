@@ -36,11 +36,26 @@ function draftToInput(draft: DraftPoll, isPublished: boolean): PollInput {
           ? { min: q.ratingMin, max: q.ratingMax, step: 1 }
           : q.type === "FREE_TEXT"
             ? { maxLength: q.maxLength ?? 500 }
-            : q.type === "MULTI_CHOICE" && q.maxSelections
-              ? { maxSelections: q.maxSelections }
+            : q.type === "MULTI_CHOICE"
+              ? buildMultiConfig(q.maxSelections, q.ranked)
               : undefined,
     })),
   };
+}
+
+/**
+ * MULTI_CHOICE config combines an optional maxSelections cap and an opt-in
+ * `ranked` flag. Returns undefined when neither is set so unranked, uncapped
+ * questions store no config (backward compatible).
+ */
+function buildMultiConfig(
+  maxSelections: number | undefined,
+  ranked: boolean | undefined
+): { maxSelections?: number; ranked?: boolean } | undefined {
+  const config: { maxSelections?: number; ranked?: boolean } = {};
+  if (maxSelections) config.maxSelections = maxSelections;
+  if (ranked) config.ranked = true;
+  return Object.keys(config).length > 0 ? config : undefined;
 }
 
 export function PollBuilder({
