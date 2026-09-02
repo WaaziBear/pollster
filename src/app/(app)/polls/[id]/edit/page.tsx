@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { requireUser, requirePollOwner, AuthorizationError } from "@/lib/auth-guards";
+import { requireUser, requirePollEditor, AuthorizationError } from "@/lib/auth-guards";
 import { getPollForEdit } from "@/lib/queries/polls";
 import { PollBuilder } from "@/components/poll/poll-builder";
 import { uid, type DraftPoll, type DraftQuestion } from "@/components/poll/draft";
@@ -12,9 +12,9 @@ export default async function EditPollPage({
   const { id } = await params;
   const user = await requireUser();
 
-  // Ownership is enforced server-side before any data is loaded.
+  // Owner or EDITOR may edit — enforced server-side before any data is loaded.
   try {
-    await requirePollOwner(id, user);
+    await requirePollEditor(id, user);
   } catch (e) {
     if (e instanceof AuthorizationError) notFound();
     throw e;

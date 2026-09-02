@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/db";
-import { getSessionUser, requirePollOwner, AuthorizationError } from "@/lib/auth-guards";
+import { getSessionUser, requirePollEditor, AuthorizationError } from "@/lib/auth-guards";
 import { inviteSchema } from "@/lib/validation/poll";
 import { normalizeEmail } from "@/lib/utils";
 import { sendInviteEmail } from "@/lib/invites";
@@ -23,7 +23,7 @@ export async function inviteEmailsAction(
 
   let poll;
   try {
-    poll = await requirePollOwner(pollId, user);
+    poll = await requirePollEditor(pollId, user);
   } catch (e) {
     if (e instanceof AuthorizationError) return fail("Not authorized.");
     throw e;
@@ -77,9 +77,9 @@ export async function revokeInviteAction(inviteId: string): Promise<ActionResult
   const invite = await prisma.invite.findUnique({ where: { id: inviteId } });
   if (!invite) return fail("Invite not found.");
 
-  // Verify the invite's poll belongs to the current user.
+  // Verify the invite's poll belongs to the current user (owner or editor).
   try {
-    await requirePollOwner(invite.pollId, user);
+    await requirePollEditor(invite.pollId, user);
   } catch (e) {
     if (e instanceof AuthorizationError) return fail("Not authorized.");
     throw e;

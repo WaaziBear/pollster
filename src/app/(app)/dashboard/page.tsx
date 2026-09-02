@@ -1,17 +1,44 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth-guards";
-import { getMyPolls, getSharedPolls } from "@/lib/queries/polls";
-import { MyPollCard, SharedPollCard } from "@/components/poll/poll-card";
+import { getMyPolls, getSharedPolls, getGrantedPolls } from "@/lib/queries/polls";
+import { MyPollCard, SharedPollCard, type SharedPollCardData } from "@/components/poll/poll-card";
 import { Button } from "@/components/ui/button";
 import { Inbox, PlusCircle } from "lucide-react";
 
 export default async function DashboardPage() {
   const user = await requireUser();
 
-  const [myPolls, sharedPolls] = await Promise.all([
+  const [myPolls, sharedPolls, grantedPolls] = await Promise.all([
     getMyPolls(user.id),
     getSharedPolls(user.id, user.email),
+    getGrantedPolls(user.id, user.email),
   ]);
+
+  // Merge grant-based and invite-based shared polls, de-duplicated by poll id.
+  // A grant takes precedence (role-aware CTA) over an invite for the same poll.
+  const grantedIds = new Set(grantedPolls.map((p) => p.id));
+  const sharedWithMe: SharedPollCardData[] = [
+    ...grantedPolls.map((p) => ({
+      id: p.id,
+      title: p.title,
+      description: p.description,
+      creator: p.creator,
+      _count: p._count,
+      hasResponded: false,
+      role: p.role,
+    })),
+    ...sharedPolls
+      .filter((p) => !grantedIds.has(p.id))
+      .map((p) => ({
+        id: p.id,
+        title: p.title,
+        description: p.description,
+        creator: p.creator,
+        _count: p._count,
+        hasResponded: p.hasResponded,
+        role: null,
+      })),
+  ];
 
   return (
     <div className="space-y-12">
@@ -57,14 +84,14 @@ export default async function DashboardPage() {
           Shared With Me
         </h2>
 
-        {sharedPolls.length === 0 ? (
+        {sharedWithMe.length === 0 ? (
           <EmptyState
             title="Nothing shared yet"
-            description="Polls you're invited to will appear here."
+            description="Polls you're invited to or granted access to will appear here."
           />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {sharedPolls.map((p) => (
+            {sharedWithMe.map((p) => (
               <SharedPollCard key={p.id} poll={p} />
             ))}
           </div>

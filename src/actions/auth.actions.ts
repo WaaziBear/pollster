@@ -6,7 +6,7 @@ import { prisma } from "@/lib/db";
 import { hashPassword } from "@/lib/hash";
 import { signupSchema, loginSchema } from "@/lib/validation/auth";
 import { normalizeEmail } from "@/lib/utils";
-import { linkInvitesToUser } from "@/lib/invites";
+import { linkInvitesToUser, linkGrantsToUser } from "@/lib/invites";
 import { rateLimit } from "@/lib/rate-limit";
 import { ActionResult, fail, ok } from "@/types/actions";
 
@@ -54,6 +54,8 @@ export async function signupAction(
 
   // Surface any invites that were addressed to this email before signup.
   await linkInvitesToUser(email, user.id);
+  // Same for per-poll access grants addressed to this email.
+  await linkGrantsToUser(email, user.id);
 
   // Establish a session. signIn with redirect:false so we can control flow.
   try {

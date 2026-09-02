@@ -3,21 +3,23 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const guardsMock = vi.hoisted(() => ({
   getSessionUser: vi.fn(),
   requirePollOwner: vi.fn(),
+  requirePollEditor: vi.fn(),
 }));
 
 const prismaMock = vi.hoisted(() => ({
-  poll: { create: vi.fn(), update: vi.fn() },
+  poll: { create: vi.fn(), update: vi.fn(), delete: vi.fn() },
 }));
 
 vi.mock("@/lib/auth-guards", () => ({
   getSessionUser: guardsMock.getSessionUser,
   requirePollOwner: guardsMock.requirePollOwner,
+  requirePollEditor: guardsMock.requirePollEditor,
   AuthorizationError: class AuthorizationError extends Error {},
 }));
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { createPollAction, updatePollAction } from "@/actions/poll.actions";
+import { createPollAction, updatePollAction, deletePollAction } from "@/actions/poll.actions";
 
 const user = { id: "user-owner", email: "owner@example.com" };
 
@@ -211,10 +213,51 @@ describe("updatePollAction", () => {
     );
   });
 
-  it("blocks a non-owner from updating", async () => {    const { AuthorizationError } = await import("@/lib/auth-guards");
-    guardsMock.requirePollOwner.mockRejectedValueOnce(new AuthorizationError("nope"));
+  it("blocks a non-editor from updating", async () => {
+    const { AuthorizationError } = await import("@/lib/auth-guards");
+    guardsMock.requirePollEditor.mockRejectedValueOnce(new AuthorizationError("nope"));
     const res = await updatePollAction("poll1", validPoll);
     expect(res.ok).toBe(false);
     expect(prismaMock.poll.update).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("deletePollAction (OWNER-ONLY)", () => {
+  beforeEach(() => {
+    prismaMock.poll.delete.mockResolvedValue({ id: "poll1" });
+    guardsMock.requirePollOwner.mockResolvedValue({ id: "poll1", creatorId: user.id });
+  });
+
+  it("fails when not signed in and never deletes", async () => {
+    guardsMock.getSessionUser.mockResolvedValue(null);
+    const res = await deletePollAction("poll1");
+    expect(res.ok).toBe(false);
+    expect(prismaMock.poll.delete).not.toHaveBeenCalled();
+  });
+
+  it("deletes when the caller owns the poll", async () => {
+    const res = await deletePollAction("poll1");
+    expect(res.ok).toBe(true);
+    expect(guardsMock.requirePollOwner).toHaveBeenCalledWith("poll1", user);
+    expect(prismaMock.poll.delete).toHaveBeenCalledWith({ where: { id: "poll1" } });
+  });
+
+  it("DENIES a non-owner and writes nothing", async () => {
+    const { AuthorizationError } = await import("@/lib/auth-guards");
+    guardsMock.requirePollOwner.mockRejectedValueOnce(new AuthorizationError("nope"));
+    const res = await deletePollAction("poll1");
+    expect(res.ok).toBe(false);
+    expect(prismaMock.poll.delete).not.toHaveBeenCalled();
+  });
+
+  it("DENIES an EDITOR (no privilege escalation) and writes nothing", async () => {
+    // deletePollAction is gated on requirePollOwner, which rejects a non-creator
+    // EDITOR exactly as it rejects any outsider — an EDITOR cannot delete.
+    const { AuthorizationError } = await import("@/lib/auth-guards");
+    guardsMock.requirePollOwner.mockRejectedValueOnce(new AuthorizationError("editor"));
+    const res = await deletePollAction("poll1");
+    expect(res.ok).toBe(false);
+    expect(prismaMock.poll.delete).not.toHaveBeenCalled();
   });
 });

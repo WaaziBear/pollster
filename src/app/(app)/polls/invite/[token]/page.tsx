@@ -1,7 +1,7 @@
 import { redirect, notFound } from "next/navigation";
 import { requireUser } from "@/lib/auth-guards";
 import { prisma } from "@/lib/db";
-import { linkInvitesToUser } from "@/lib/invites";
+import { linkInvitesToUser, linkGrantsToUser } from "@/lib/invites";
 
 /**
  * Invite-link landing. The token alone is NOT access — we still resolve the
@@ -30,6 +30,10 @@ export default async function InviteLandingPage({
   if (invite.email === user.email && !invite.userId) {
     await linkInvitesToUser(user.email, user.id);
   }
+
+  // Also link any per-poll access grants addressed to this signed-in user's
+  // email (independent of the specific invite token they arrived through).
+  await linkGrantsToUser(user.email, user.id);
 
   redirect(`/polls/${invite.pollId}`);
 }

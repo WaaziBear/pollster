@@ -4,11 +4,12 @@ const prismaMock = vi.hoisted(() => ({
   poll: { findUnique: vi.fn(), findMany: vi.fn(), findFirst: vi.fn() },
   response: { findUnique: vi.fn() },
   answer: { findMany: vi.fn() },
+  pollAccess: { findMany: vi.fn() },
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
 // polls.ts now transitively imports auth-guards (getResponsesForExport ->
-// requirePollOwner), which pulls in @/auth + next/navigation at module load.
+// requireResultsAccess), which pulls in @/auth + next/navigation at module load.
 // These stubs keep that graph resolvable under vitest; no test here exercises
 // auth, so they are inert with respect to assertions below.
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
@@ -17,6 +18,7 @@ vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 import {
   getResults,
   getSharedPolls,
+  getGrantedPolls,
   getPollForRespondent,
   getVisibleComments,
 } from "@/lib/queries/polls";
@@ -281,6 +283,34 @@ describe("getVisibleComments", () => {
     expect(prismaMock.answer.findMany).not.toHaveBeenCalled();
   });
 
+  it("EDITORS + EDITOR grant: now returns authored comments (owner + editors)", async () => {
+    prismaMock.poll.findFirst.mockResolvedValue({
+      creatorId: "owner",
+      commentVisibility: "EDITORS",
+      accessGrants: [{ role: "EDITOR" }],
+    });
+    seedAnswers();
+    const res = await getVisibleComments("poll1", other);
+    expect(res).not.toBeNull();
+    if (!res) return;
+    expect(res.mode).toBe("EDITORS");
+    expect(res.byQuestion.q1).toEqual([
+      { comment: "first", author: { id: "r-alice", name: "alice" } },
+    ]);
+    expect(prismaMock.answer.findMany).toHaveBeenCalledTimes(1);
+  });
+
+  it("EDITORS + RESULTS_VIEWER grant: still EMPTY (results viewer is not an editor)", async () => {
+    prismaMock.poll.findFirst.mockResolvedValue({
+      creatorId: "owner",
+      commentVisibility: "EDITORS",
+      accessGrants: [{ role: "RESULTS_VIEWER" }],
+    });
+    const res = await getVisibleComments("poll1", other);
+    expect(res).toEqual({ mode: "EDITORS", byQuestion: {} });
+    expect(prismaMock.answer.findMany).not.toHaveBeenCalled();
+  });
+
   it("ANONYMOUS + owner: strips author id/email (author=null)", async () => {
     prismaMock.poll.findFirst.mockResolvedValue({
       creatorId: "owner",
@@ -344,5 +374,80 @@ describe("getVisibleComments", () => {
     const res = await getVisibleComments("poll1", owner);
     if (!res) return;
     expect(res.byQuestion).toEqual({});
+  });
+});
+
+
+describe("getGrantedPolls", () => {
+  it("queries grants by userId OR email, excluding polls the user owns", async () => {
+    prismaMock.pollAccess.findMany.mockResolvedValue([]);
+    await getGrantedPolls("user1", "user1@example.com");
+
+    const arg = prismaMock.pollAccess.findMany.mock.calls[0][0];
+    expect(arg.where.OR).toEqual(
+      expect.arrayContaining([{ userId: "user1" }, { email: "user1@example.com" }])
+    );
+    expect(arg.where.poll).toEqual({ creatorId: { not: "user1" } });
+  });
+
+  it("returns role-tagged polls", async () => {
+    prismaMock.pollAccess.findMany.mockResolvedValue([
+      {
+        role: "EDITOR",
+        poll: {
+          id: "p1",
+          title: "One",
+          description: null,
+          isPublished: false,
+          creator: { email: "o@e.com", name: null },
+          _count: { questions: 3 },
+        },
+      },
+      {
+        role: "RESULTS_VIEWER",
+        poll: {
+          id: "p2",
+          title: "Two",
+          description: "d",
+          isPublished: true,
+          creator: { email: "o@e.com", name: "Owner" },
+          _count: { questions: 1 },
+        },
+      },
+    ]);
+    const res = await getGrantedPolls("user1", "user1@example.com");
+    expect(res).toHaveLength(2);
+    expect(res[0]).toMatchObject({ id: "p1", role: "EDITOR", isPublished: false });
+    expect(res[1]).toMatchObject({ id: "p2", role: "RESULTS_VIEWER" });
+  });
+
+  it("de-dupes a poll matched twice, preferring EDITOR over RESULTS_VIEWER", async () => {
+    prismaMock.pollAccess.findMany.mockResolvedValue([
+      {
+        role: "RESULTS_VIEWER",
+        poll: {
+          id: "p1",
+          title: "One",
+          description: null,
+          isPublished: true,
+          creator: { email: "o@e.com", name: null },
+          _count: { questions: 2 },
+        },
+      },
+      {
+        role: "EDITOR",
+        poll: {
+          id: "p1",
+          title: "One",
+          description: null,
+          isPublished: true,
+          creator: { email: "o@e.com", name: null },
+          _count: { questions: 2 },
+        },
+      },
+    ]);
+    const res = await getGrantedPolls("user1", "user1@example.com");
+    expect(res).toHaveLength(1);
+    expect(res[0].role).toBe("EDITOR");
   });
 });

@@ -63,6 +63,10 @@ export type SharedPollCardData = {
   creator: { email: string; name: string | null };
   _count: { questions: number };
   hasResponded: boolean;
+  // When present, the poll is shared via an access GRANT and the CTA is
+  // role-aware (EDITOR -> Edit; RESULTS_VIEWER -> Results). When null/absent,
+  // the poll is shared via an invite and the CTA is Answer.
+  role?: "EDITOR" | "RESULTS_VIEWER" | null;
 };
 
 export function SharedPollCard({ poll }: { poll: SharedPollCardData }) {
@@ -71,7 +75,13 @@ export function SharedPollCard({ poll }: { poll: SharedPollCardData }) {
       <CardHeader>
         <div className="flex items-start justify-between gap-2">
           <CardTitle className="line-clamp-2 font-heading">{poll.title}</CardTitle>
-          {poll.hasResponded && <Badge variant="success">Answered</Badge>}
+          {poll.role ? (
+            <Badge variant={poll.role === "EDITOR" ? "default" : "secondary"}>
+              {poll.role === "EDITOR" ? "Editor" : "Results viewer"}
+            </Badge>
+          ) : (
+            poll.hasResponded && <Badge variant="success">Answered</Badge>
+          )}
         </div>
         <p className="text-sm text-muted-foreground">
           from {poll.creator.name ?? poll.creator.email}
@@ -86,11 +96,21 @@ export function SharedPollCard({ poll }: { poll: SharedPollCardData }) {
         {poll._count.questions} questions
       </CardContent>
       <CardFooter className="mt-auto">
-        <Button asChild size="sm" variant={poll.hasResponded ? "outline" : "cta"}>
-          <Link href={`/polls/${poll.id}`}>
-            {poll.hasResponded ? "View / edit answer" : "Answer poll"}
-          </Link>
-        </Button>
+        {poll.role === "EDITOR" ? (
+          <Button asChild size="sm" variant="outline">
+            <Link href={`/polls/${poll.id}/edit`}>Edit</Link>
+          </Button>
+        ) : poll.role === "RESULTS_VIEWER" ? (
+          <Button asChild size="sm">
+            <Link href={`/polls/${poll.id}/results`}>Results</Link>
+          </Button>
+        ) : (
+          <Button asChild size="sm" variant={poll.hasResponded ? "outline" : "cta"}>
+            <Link href={`/polls/${poll.id}`}>
+              {poll.hasResponded ? "View / edit answer" : "Answer poll"}
+            </Link>
+          </Button>
+        )}
       </CardFooter>
     </Card>
   );

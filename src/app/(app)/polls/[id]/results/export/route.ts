@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import {
   getSessionUser,
-  requirePollOwner,
+  requireResultsAccess,
   AuthorizationError,
 } from "@/lib/auth-guards";
 import {
@@ -38,10 +38,10 @@ export async function GET(
     return new NextResponse("Unauthorized", { status: 401 });
   }
 
-  // Owner-only. On failure return 404 to avoid leaking poll existence
-  // (matches the results page convention).
+  // Results access (owner / EDITOR / RESULTS_VIEWER). On failure return 404 to
+  // avoid leaking poll existence (matches the results page convention).
   try {
-    await requirePollOwner(id, user);
+    await requireResultsAccess(id, user);
   } catch (e) {
     if (e instanceof AuthorizationError) {
       return new NextResponse("Not found", { status: 404 });

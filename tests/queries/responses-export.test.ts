@@ -2,12 +2,13 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 
 const prismaMock = vi.hoisted(() => ({
   poll: { findUnique: vi.fn() },
+  pollAccess: { findMany: vi.fn() },
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
-// getResponsesForExport -> requirePollOwner pulls @/auth + next/navigation into
-// the module graph; stub them so the module loads under vitest. The real
-// ownership logic (requirePollOwner) still runs against the mocked prisma.
+// getResponsesForExport -> requireResultsAccess pulls @/auth + next/navigation
+// into the module graph; stub them so the module loads under vitest. The real
+// access logic (requireResultsAccess) still runs against the mocked prisma.
 vi.mock("@/auth", () => ({ auth: vi.fn() }));
 vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
@@ -19,21 +20,43 @@ const outsider = { id: "outsider", email: "out@example.com" };
 
 beforeEach(() => {
   vi.clearAllMocks();
+  // Default: no grants (so a non-owner is denied unless a test says otherwise).
+  prismaMock.pollAccess.findMany.mockResolvedValue([]);
 });
 
-describe("getResponsesForExport owner-gating", () => {
-  it("throws AuthorizationError for a non-owner and never queries response data", async () => {
-    // requirePollOwner's ownership lookup returns a poll owned by someone else.
+describe("getResponsesForExport results-access gating", () => {
+  it("throws AuthorizationError for a non-owner without a grant and never queries response data", async () => {
+    // requireResultsAccess's poll lookup returns a poll owned by someone else.
     prismaMock.poll.findUnique.mockResolvedValueOnce({
       id: "poll1",
       creatorId: owner.id,
     });
+    prismaMock.pollAccess.findMany.mockResolvedValueOnce([]); // no grant
 
     await expect(getResponsesForExport("poll1", outsider)).rejects.toBeInstanceOf(
       AuthorizationError
     );
-    // Only the ownership check ran; the data query was never reached.
+    // Only the access check ran; the data query was never reached.
     expect(prismaMock.poll.findUnique).toHaveBeenCalledTimes(1);
+  });
+
+  it("allows a RESULTS_VIEWER grant and returns the export data", async () => {
+    prismaMock.poll.findUnique
+      // 1) poll lookup inside requireResultsAccess
+      .mockResolvedValueOnce({ id: "poll1", creatorId: owner.id })
+      // 2) the export data query
+      .mockResolvedValueOnce({
+        id: "poll1",
+        title: "T",
+        commentVisibility: "EDITORS",
+        questions: [],
+        responses: [],
+      });
+    prismaMock.pollAccess.findMany.mockResolvedValueOnce([{ role: "RESULTS_VIEWER" }]);
+
+    const data = await getResponsesForExport("poll1", outsider);
+    expect(data.title).toBe("T");
+    expect(prismaMock.poll.findUnique).toHaveBeenCalledTimes(2);
   });
 
   it("throws AuthorizationError when the poll does not exist", async () => {

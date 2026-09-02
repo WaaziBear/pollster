@@ -32,6 +32,16 @@ enum CommentVisibility {
   EVERYONE
 }
 
+// Per-poll access grant roles (additive to owner/invitee model).
+//   EDITOR         -> edit content/settings, publish/unpublish, manage
+//                     respondent invites; implies viewing results. Cannot
+//                     delete the poll or manage grants (owner-only).
+//   RESULTS_VIEWER -> view results + full raw-response Excel export.
+enum PollRole {
+  EDITOR
+  RESULTS_VIEWER
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -43,6 +53,7 @@ model User {
   polls     Poll[]     @relation("PollCreator")
   invites   Invite[] // invites linked to this user once matched by email
   responses Response[]
+  pollAccess PollAccess[] // per-poll access grants linked to this user by email
 }
 
 model Poll {
@@ -63,6 +74,7 @@ model Poll {
   questions Question[]
   invites   Invite[]
   responses Response[]
+  accessGrants PollAccess[] // per-poll access grants (EDITOR / RESULTS_VIEWER)
 
   @@index([creatorId])
 }
@@ -114,6 +126,26 @@ model Invite {
   @@unique([pollId, email]) // one invite per email per poll
   @@index([email])
   @@index([userId])
+}
+
+// Per-poll access grant. Mirrors the Invite email-linking pattern: a grant is
+// addressed to a normalized email and linked to a concrete account (userId)
+// once that email owns one (at grant time if already registered, or at signup
+// via linkGrantsToUser). Owner-managed only.
+model PollAccess {
+  id        String   @id @default(cuid())
+  pollId    String
+  email     String // normalized lower-case
+  userId    String?
+  role      PollRole
+  createdAt DateTime @default(now())
+
+  poll Poll  @relation(fields: [pollId], references: [id], onDelete: Cascade)
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@unique([pollId, email]) // one grant per email per poll
+  @@index([userId])
+  @@index([email])
 }
 
 model Response {

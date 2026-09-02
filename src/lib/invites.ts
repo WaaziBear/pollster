@@ -29,6 +29,28 @@ export async function linkInvitesToUser(
 }
 
 /**
+ * Link any per-poll access grants addressed to `email` to a concrete user
+ * account. Mirrors linkInvitesToUser: called at signup (and on invite-link
+ * landing) so grants created before the grantee had an account are surfaced on
+ * their dashboard and honored by the guards via userId. Matches on the
+ * normalized email string; only unlinked grants are updated.
+ */
+export async function linkGrantsToUser(
+  email: string,
+  userId: string
+): Promise<number> {
+  const normalized = normalizeEmail(email);
+  const result = await prisma.pollAccess.updateMany({
+    where: {
+      email: normalized,
+      userId: null,
+    },
+    data: { userId },
+  });
+  return result.count;
+}
+
+/**
  * Send (or, in local dev, stub) an invite email.
  *
  * Delivery is env-gated: if both `RESEND_API_KEY` and `EMAIL_FROM` are set we

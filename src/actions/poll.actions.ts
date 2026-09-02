@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { getSessionUser, requirePollOwner, AuthorizationError } from "@/lib/auth-guards";
+import { getSessionUser, requirePollOwner, requirePollEditor, AuthorizationError } from "@/lib/auth-guards";
 import { pollSchema, type PollInput } from "@/lib/validation/poll";
 import { ActionResult, fail, ok } from "@/types/actions";
 
@@ -77,7 +77,7 @@ export async function updatePollAction(
   if (!user) return fail("You must be signed in.");
 
   try {
-    await requirePollOwner(pollId, user);
+    await requirePollEditor(pollId, user);
   } catch (e) {
     if (e instanceof AuthorizationError) return fail("Not authorized.");
     throw e;
@@ -118,7 +118,7 @@ export async function publishPollAction(
   const user = await getSessionUser();
   if (!user) return fail("You must be signed in.");
   try {
-    await requirePollOwner(pollId, user);
+    await requirePollEditor(pollId, user);
   } catch (e) {
     if (e instanceof AuthorizationError) return fail("Not authorized.");
     throw e;

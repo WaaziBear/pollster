@@ -21,7 +21,10 @@ const authMock = vi.hoisted(() => ({ signIn: vi.fn(), signOut: vi.fn() }));
 const prismaMock = vi.hoisted(() => ({
   user: { findUnique: vi.fn(), create: vi.fn() },
 }));
-const invitesMock = vi.hoisted(() => ({ linkInvitesToUser: vi.fn() }));
+const invitesMock = vi.hoisted(() => ({
+  linkInvitesToUser: vi.fn(),
+  linkGrantsToUser: vi.fn(),
+}));
 
 vi.mock("@/auth", () => authMock);
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
@@ -48,6 +51,7 @@ beforeEach(() => {
     ...data,
   }));
   invitesMock.linkInvitesToUser.mockResolvedValue(0);
+  invitesMock.linkGrantsToUser.mockResolvedValue(0);
   authMock.signIn.mockResolvedValue(undefined);
 });
 

@@ -6,6 +6,9 @@ const prismaMock = vi.hoisted(() => ({
     findUnique: vi.fn(),
     findFirst: vi.fn(),
   },
+  pollAccess: {
+    findMany: vi.fn(),
+  },
 }));
 
 const authMock = vi.hoisted(() => ({ auth: vi.fn() }));
@@ -20,6 +23,9 @@ vi.mock("next/navigation", () => ({ redirect: redirectMock }));
 import {
   canAccessPoll,
   requirePollOwner,
+  requirePollEditor,
+  requireResultsAccess,
+  getPollRoleForUser,
   requireInvitee,
   requireUser,
   getSessionUser,
@@ -117,6 +123,104 @@ describe("requirePollOwner", () => {
   it("throws AuthorizationError when the poll does not exist", async () => {
     prismaMock.poll.findUnique.mockResolvedValue(null);
     await expect(requirePollOwner("missing", owner)).rejects.toBeInstanceOf(
+      AuthorizationError
+    );
+  });
+});
+
+describe("getPollRoleForUser / requirePollEditor / requireResultsAccess", () => {
+  const grantee = { id: "user-grantee", email: "grantee@example.com" };
+
+  it("getPollRoleForUser returns OWNER for the creator (no grant lookup)", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({ id: "poll1", creatorId: owner.id });
+    await expect(getPollRoleForUser("poll1", owner)).resolves.toBe("OWNER");
+    expect(prismaMock.pollAccess.findMany).not.toHaveBeenCalled();
+  });
+
+  it("getPollRoleForUser returns EDITOR for an EDITOR grant", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({ id: "poll1", creatorId: owner.id });
+    prismaMock.pollAccess.findMany.mockResolvedValue([{ role: "EDITOR" }]);
+    await expect(getPollRoleForUser("poll1", grantee)).resolves.toBe("EDITOR");
+  });
+
+  it("getPollRoleForUser returns RESULTS_VIEWER for a RESULTS_VIEWER grant", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({ id: "poll1", creatorId: owner.id });
+    prismaMock.pollAccess.findMany.mockResolvedValue([{ role: "RESULTS_VIEWER" }]);
+    await expect(getPollRoleForUser("poll1", grantee)).resolves.toBe("RESULTS_VIEWER");
+  });
+
+  it("getPollRoleForUser prefers EDITOR when both grants match", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({ id: "poll1", creatorId: owner.id });
+    prismaMock.pollAccess.findMany.mockResolvedValue([
+      { role: "RESULTS_VIEWER" },
+      { role: "EDITOR" },
+    ]);
+    await expect(getPollRoleForUser("poll1", grantee)).resolves.toBe("EDITOR");
+  });
+
+  it("getPollRoleForUser returns null for a non-granted outsider", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({ id: "poll1", creatorId: owner.id });
+    prismaMock.pollAccess.findMany.mockResolvedValue([]);
+    await expect(getPollRoleForUser("poll1", outsider)).resolves.toBeNull();
+  });
+
+  it("getPollRoleForUser returns null when the poll does not exist", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue(null);
+    await expect(getPollRoleForUser("missing", owner)).resolves.toBeNull();
+  });
+
+  it("requirePollEditor allows the owner and returns the poll", async () => {
+    const poll = { id: "poll1", creatorId: owner.id };
+    prismaMock.poll.findUnique.mockResolvedValue(poll);
+    await expect(requirePollEditor("poll1", owner)).resolves.toBe(poll);
+  });
+
+  it("requirePollEditor allows an EDITOR grant", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({ id: "poll1", creatorId: owner.id });
+    prismaMock.pollAccess.findMany.mockResolvedValue([{ role: "EDITOR" }]);
+    await expect(requirePollEditor("poll1", grantee)).resolves.toMatchObject({
+      id: "poll1",
+    });
+  });
+
+  it("requirePollEditor DENIES a RESULTS_VIEWER grant", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({ id: "poll1", creatorId: owner.id });
+    prismaMock.pollAccess.findMany.mockResolvedValue([{ role: "RESULTS_VIEWER" }]);
+    await expect(requirePollEditor("poll1", grantee)).rejects.toBeInstanceOf(
+      AuthorizationError
+    );
+  });
+
+  it("requirePollEditor DENIES a non-granted outsider", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({ id: "poll1", creatorId: owner.id });
+    prismaMock.pollAccess.findMany.mockResolvedValue([]);
+    await expect(requirePollEditor("poll1", outsider)).rejects.toBeInstanceOf(
+      AuthorizationError
+    );
+  });
+
+  it("requireResultsAccess allows owner, EDITOR, and RESULTS_VIEWER", async () => {
+    // owner
+    prismaMock.poll.findUnique.mockResolvedValue({ id: "poll1", creatorId: owner.id });
+    await expect(requireResultsAccess("poll1", owner)).resolves.toMatchObject({
+      id: "poll1",
+    });
+    // EDITOR grant
+    prismaMock.pollAccess.findMany.mockResolvedValueOnce([{ role: "EDITOR" }]);
+    await expect(requireResultsAccess("poll1", grantee)).resolves.toMatchObject({
+      id: "poll1",
+    });
+    // RESULTS_VIEWER grant
+    prismaMock.pollAccess.findMany.mockResolvedValueOnce([{ role: "RESULTS_VIEWER" }]);
+    await expect(requireResultsAccess("poll1", grantee)).resolves.toMatchObject({
+      id: "poll1",
+    });
+  });
+
+  it("requireResultsAccess DENIES a non-granted outsider", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({ id: "poll1", creatorId: owner.id });
+    prismaMock.pollAccess.findMany.mockResolvedValue([]);
+    await expect(requireResultsAccess("poll1", outsider)).rejects.toBeInstanceOf(
       AuthorizationError
     );
   });

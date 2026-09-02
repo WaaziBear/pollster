@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { FileSpreadsheet } from "lucide-react";
-import { requireUser, requirePollOwner, AuthorizationError } from "@/lib/auth-guards";
+import { requireUser, requireResultsAccess, getPollRoleForUser, AuthorizationError } from "@/lib/auth-guards";
 import { getResults, getVisibleComments } from "@/lib/queries/polls";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,13 +16,17 @@ export default async function ResultsPage({
   const { id } = await params;
   const user = await requireUser();
 
-  // getResults itself performs NO auth check, so the page MUST guard ownership.
+  // Results access: owner, EDITOR, or RESULTS_VIEWER (enforced server-side).
   try {
-    await requirePollOwner(id, user);
+    await requireResultsAccess(id, user);
   } catch (e) {
     if (e instanceof AuthorizationError) notFound();
     throw e;
   }
+
+  // Role drives which management links are surfaced (invites are editor-only).
+  const role = await getPollRoleForUser(id, user);
+  const canManageInvites = role === "OWNER" || role === "EDITOR";
 
   const results = await getResults(id);
   if (!results) notFound();
@@ -49,9 +53,11 @@ export default async function ResultsPage({
               Export to Excel
             </a>
           </Button>
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/polls/${id}/invite`}>Invite</Link>
-          </Button>
+          {canManageInvites && (
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/polls/${id}/invite`}>Invite</Link>
+            </Button>
+          )}
           <Button asChild size="sm" variant="outline">
             <Link href="/dashboard">Back</Link>
           </Button>

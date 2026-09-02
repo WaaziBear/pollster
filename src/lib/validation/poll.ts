@@ -108,3 +108,20 @@ export const inviteSchema = z.object({
 });
 
 export type InviteInput = z.infer<typeof inviteSchema>;
+
+// Keep in sync with Prisma `PollRole` enum.
+export const pollRoleSchema = z.enum(["EDITOR", "RESULTS_VIEWER"]);
+
+export type PollRoleInput = z.infer<typeof pollRoleSchema>;
+
+// Access grants: same email-list shape as invites, plus a role.
+export const grantSchema = z.object({
+  pollId: z.string().min(1),
+  emails: z
+    .array(z.string().trim().email("Invalid email").max(254))
+    .min(1, "Enter at least one email")
+    .max(200, "Too many emails at once"),
+  role: pollRoleSchema,
+});
+
+export type GrantInput = z.infer<typeof grantSchema>;

@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { requireUser, requirePollOwner, AuthorizationError } from "@/lib/auth-guards";
-import { getPollInvites } from "@/lib/queries/polls";
+import { requireUser, requirePollEditor, AuthorizationError } from "@/lib/auth-guards";
+import { getPollInvites, getPollGrants } from "@/lib/queries/polls";
 import { InviteManager } from "@/components/poll/invite-manager";
+import { AccessManager, type GrantRole } from "@/components/poll/access-manager";
 import { Button } from "@/components/ui/button";
 
 export default async function InvitePage({
@@ -13,16 +14,21 @@ export default async function InvitePage({
   const { id } = await params;
   const user = await requireUser();
 
-  // Owner-only page — enforced server-side.
+  // Owner OR editor may manage respondent invites — enforced server-side.
   let poll;
   try {
-    poll = await requirePollOwner(id, user);
+    poll = await requirePollEditor(id, user);
   } catch (e) {
     if (e instanceof AuthorizationError) notFound();
     throw e;
   }
 
+  // Managing access grants is OWNER-ONLY; editors see invites but not the
+  // Access & sharing manager.
+  const isOwner = poll.creatorId === user.id;
+
   const invites = await getPollInvites(id);
+  const grants = isOwner ? await getPollGrants(id) : [];
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -56,6 +62,32 @@ export default async function InvitePage({
           token: i.token,
         }))}
       />
+
+      {isOwner && (
+        <section className="space-y-4 border-t pt-8" aria-labelledby="access-heading">
+          <div>
+            <h2
+              id="access-heading"
+              className="text-xl font-bold font-heading tracking-tight"
+            >
+              Access &amp; sharing
+            </h2>
+            <p className="text-sm text-muted-foreground">
+              Grant editors or results viewers access to this poll. Only you can
+              manage access.
+            </p>
+          </div>
+          <AccessManager
+            pollId={poll.id}
+            grants={grants.map((g) => ({
+              id: g.id,
+              email: g.email,
+              role: g.role as GrantRole,
+              userId: g.userId,
+            }))}
+          />
+        </section>
+      )}
     </div>
   );
 }

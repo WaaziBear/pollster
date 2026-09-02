@@ -19,10 +19,10 @@ export default async function PollRespondPage({
   const result = await getPollForRespondent(id, user);
   if (!result) notFound();
 
-  const { poll, existingResponse, isOwner } = result;
+  const { poll, existingResponse, isOwner, isEditor } = result;
 
-  // A draft poll can only be previewed by its owner.
-  const isPreview = isOwner && !poll.isPublished;
+  // A draft poll can only be previewed by its owner or an editor.
+  const isPreview = (isOwner || isEditor) && !poll.isPublished;
 
   const questions: AnswerFormQuestion[] = poll.questions.map((q) => ({
     id: q.id,

@@ -1,6 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/auth-guards";
-import { requirePollOwner } from "@/lib/auth-guards";
+import { requireResultsAccess } from "@/lib/auth-guards";
 import { displayNameFromEmail } from "@/lib/utils";
 import type { CommentVisibility } from "@prisma/client";
 
@@ -60,6 +60,71 @@ export async function getSharedPolls(userId: string, email: string) {
   }));
 }
 
+export type GrantedPoll = {
+  id: string;
+  title: string;
+  description: string | null;
+  isPublished: boolean;
+  creator: { email: string; name: string | null };
+  _count: { questions: number };
+  role: "EDITOR" | "RESULTS_VIEWER";
+};
+
+/**
+ * Polls shared with the user via a per-poll access grant (matched by userId OR
+ * email for freshly-linked accounts), excluding polls they own. NO isPublished
+ * filter — editors may see drafts. De-duplicated by poll (EDITOR outranks
+ * RESULTS_VIEWER when, in edge cases, both match by different keys).
+ */
+export async function getGrantedPolls(
+  userId: string,
+  email: string
+): Promise<GrantedPoll[]> {
+  const grants = await prisma.pollAccess.findMany({
+    where: {
+      OR: [{ userId }, { email }],
+      poll: { creatorId: { not: userId } },
+    },
+    orderBy: { createdAt: "desc" },
+    select: {
+      role: true,
+      poll: {
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          isPublished: true,
+          creator: { select: { email: true, name: true } },
+          _count: { select: { questions: true } },
+        },
+      },
+    },
+  });
+
+  const byPoll = new Map<string, GrantedPoll>();
+  for (const g of grants) {
+    const existing = byPoll.get(g.poll.id);
+    // EDITOR outranks RESULTS_VIEWER if the same poll matched twice.
+    if (existing) {
+      if (existing.role !== "EDITOR" && g.role === "EDITOR") {
+        existing.role = "EDITOR";
+      }
+      continue;
+    }
+    byPoll.set(g.poll.id, { ...g.poll, role: g.role });
+  }
+  return Array.from(byPoll.values());
+}
+
+/** Owner-only: access grants for a poll's management page. */
+export async function getPollGrants(pollId: string) {
+  return prisma.pollAccess.findMany({
+    where: { pollId },
+    orderBy: { createdAt: "desc" },
+    select: { id: true, email: true, role: true, userId: true },
+  });
+}
+
 /**
  * Load a poll (with questions + options) for a respondent, applying the access
  * filter directly in the query. Returns null when the user is not authorized,
@@ -81,6 +146,17 @@ export async function getPollForRespondent(pollId: string, user: SessionUser) {
             },
           },
         },
+        {
+          // EDITORS may reach the poll (incl. drafts) for editing/preview. This
+          // does NOT grant respond access: submission is still invite-gated by
+          // requireInvitee/canAccessPoll in the response action.
+          accessGrants: {
+            some: {
+              role: "EDITOR",
+              OR: [{ userId: user.id }, { email: user.email }],
+            },
+          },
+        },
       ],
     },
     include: {
@@ -89,6 +165,13 @@ export async function getPollForRespondent(pollId: string, user: SessionUser) {
         include: { options: { orderBy: { order: "asc" } } },
       },
       creator: { select: { email: true, name: true } },
+      accessGrants: {
+        where: {
+          role: "EDITOR",
+          OR: [{ userId: user.id }, { email: user.email }],
+        },
+        select: { role: true },
+      },
     },
   });
 
@@ -106,7 +189,9 @@ export async function getPollForRespondent(pollId: string, user: SessionUser) {
     },
   });
 
-  return { poll, existingResponse, isOwner: poll.creatorId === user.id };
+  const isOwner = poll.creatorId === user.id;
+  const isEditor = isOwner || (poll.accessGrants ?? []).length > 0;
+  return { poll, existingResponse, isOwner, isEditor };
 }
 
 /** A single visible comment, attributed unless the poll mode strips identity. */
@@ -132,8 +217,9 @@ export type VisibleComments = {
  *   - ANONYMOUS: comments visible to everyone who can view the poll, but the
  *     author id/email NEVER leaves the server (author = null for all viewers,
  *     including the owner).
- *   - EDITORS (default): owner-only. Non-owners receive an EMPTY map — comments
- *     are never sent to the client for non-owners.
+ *   - EDITORS (default): owner + editors only. Everyone else (RESULTS_VIEWERs,
+ *     plain invitees) receives an EMPTY map — comments are never sent to their
+ *     client.
  *   - EVERYONE: authored (name = email local-part, id = user id). Gating of
  *     peer visibility (respondent must have submitted first) is enforced by the
  *     caller; the owner always sees comments on results.
@@ -156,18 +242,36 @@ export async function getVisibleComments(
             },
           },
         },
+        {
+          // Editors / results-viewers reach comments per the mode rules below,
+          // regardless of publish state.
+          accessGrants: {
+            some: { OR: [{ userId: viewer.id }, { email: viewer.email }] },
+          },
+        },
       ],
     },
-    select: { creatorId: true, commentVisibility: true },
+    select: {
+      creatorId: true,
+      commentVisibility: true,
+      accessGrants: {
+        where: { OR: [{ userId: viewer.id }, { email: viewer.email }] },
+        select: { role: true },
+      },
+    },
   });
 
   if (!poll) return null;
 
   const mode = poll.commentVisibility;
   const isOwner = poll.creatorId === viewer.id;
+  // Real editors = owner OR an EDITOR grant. The EDITORS mode is scoped to
+  // these; RESULTS_VIEWERs and plain invitees are not editors.
+  const isEditor =
+    isOwner || (poll.accessGrants ?? []).some((g) => g.role === "EDITOR");
 
-  // EDITORS: owner-only. Never send comments to non-owners.
-  if (mode === "EDITORS" && !isOwner) {
+  // EDITORS: owner + editors only. Never send comments to anyone else.
+  if (mode === "EDITORS" && !isEditor) {
     return { mode, byQuestion: {} };
   }
 
@@ -346,13 +450,14 @@ function stripQuestion(q: {
 
 
 /**
- * OWNER-ONLY: raw per-respondent data for the Excel export's "Responses" sheet.
+ * RESULTS ACCESS ONLY (owner / EDITOR / RESULTS_VIEWER): raw per-respondent data
+ * for the Excel export's "Responses" sheet.
  *
- * Ownership is enforced server-side via requirePollOwner (throws
- * AuthorizationError for non-owners), so the underlying respondent identities
- * (id/email) never leave the server for anyone but the poll creator. Callers
- * MUST still respect Poll.commentVisibility when rendering (the ANONYMOUS mode
- * forbids emitting per-respondent comments — see buildResultsWorkbook).
+ * Access is enforced server-side via requireResultsAccess (throws
+ * AuthorizationError otherwise), so respondent identities (id/email) never leave
+ * the server for anyone without results access. Callers MUST still respect
+ * Poll.commentVisibility when rendering (the ANONYMOUS mode forbids emitting
+ * per-respondent comments — see buildResultsWorkbook).
  *
  * Returns the poll (title + commentVisibility), its questions in display order,
  * and every Response with its answers (values, comment, and ranked selections).
@@ -361,8 +466,8 @@ export async function getResponsesForExport(
   pollId: string,
   viewer: SessionUser
 ) {
-  // Throws AuthorizationError if the viewer is not the poll owner.
-  await requirePollOwner(pollId, viewer);
+  // Throws AuthorizationError if the viewer lacks results access.
+  await requireResultsAccess(pollId, viewer);
 
   const poll = await prisma.poll.findUnique({
     where: { id: pollId },
@@ -408,7 +513,7 @@ export async function getResponsesForExport(
     },
   });
 
-  // requirePollOwner already guaranteed existence + ownership.
+  // requireResultsAccess already guaranteed existence + access.
   return poll!;
 }
 

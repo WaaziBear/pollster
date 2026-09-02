@@ -57,6 +57,83 @@ export async function requirePollOwner(pollId: string, user: SessionUser) {
   return poll;
 }
 
+/** Effective role of a user on a poll (highest capability wins). */
+export type PollRoleForUser = "OWNER" | "EDITOR" | "RESULTS_VIEWER" | null;
+
+/**
+ * Single shared predicate for per-poll authorization. Loads the poll and the
+ * caller's effective role:
+ *   1. creatorId match           -> OWNER
+ *   2. PollAccess grant (by userId, OR by email as a fallback for accounts not
+ *      yet linked) -> EDITOR (outranks) or RESULTS_VIEWER
+ *   otherwise                    -> null
+ *
+ * Returns the poll row alongside the role so throwing guards can hand callers
+ * the poll without a second round-trip. `poll` is null only when the poll does
+ * not exist.
+ */
+async function loadPollWithRole(
+  pollId: string,
+  user: SessionUser
+): Promise<{ poll: Awaited<ReturnType<typeof prisma.poll.findUnique>>; role: PollRoleForUser }> {
+  const poll = await prisma.poll.findUnique({ where: { id: pollId } });
+  if (!poll) return { poll: null, role: null };
+  if (poll.creatorId === user.id) return { poll, role: "OWNER" };
+
+  const grants = await prisma.pollAccess.findMany({
+    where: {
+      pollId,
+      OR: [{ userId: user.id }, { email: user.email }],
+    },
+    select: { role: true },
+  });
+  const roles = grants.map((g) => g.role);
+  const role: PollRoleForUser = roles.includes("EDITOR")
+    ? "EDITOR"
+    : roles.includes("RESULTS_VIEWER")
+      ? "RESULTS_VIEWER"
+      : null;
+  return { poll, role };
+}
+
+/**
+ * Non-throwing role resolver. Returns 'OWNER' | 'EDITOR' | 'RESULTS_VIEWER' |
+ * null. Used for role-aware UI and read paths.
+ */
+export async function getPollRoleForUser(
+  pollId: string,
+  user: SessionUser
+): Promise<PollRoleForUser> {
+  const { role } = await loadPollWithRole(pollId, user);
+  return role;
+}
+
+/**
+ * Require EDITOR capability (owner OR an EDITOR grant). Editors may edit poll
+ * content/settings, publish/unpublish, and manage respondent invites. Throws
+ * AuthorizationError otherwise. Returns the poll row on success.
+ */
+export async function requirePollEditor(pollId: string, user: SessionUser) {
+  const { poll, role } = await loadPollWithRole(pollId, user);
+  if (!poll || (role !== "OWNER" && role !== "EDITOR")) {
+    throw new AuthorizationError();
+  }
+  return poll;
+}
+
+/**
+ * Require results access (owner OR EDITOR OR RESULTS_VIEWER). Gates the results
+ * page and the raw-response Excel export. Throws AuthorizationError otherwise.
+ * Returns the poll row on success.
+ */
+export async function requireResultsAccess(pollId: string, user: SessionUser) {
+  const { poll, role } = await loadPollWithRole(pollId, user);
+  if (!poll || role === null) {
+    throw new AuthorizationError();
+  }
+  return poll;
+}
+
 /**
  * Authorization predicate for viewing/answering a poll.
  *
