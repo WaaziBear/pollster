@@ -7,6 +7,12 @@ const prismaMock = vi.hoisted(() => ({
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
+// polls.ts now transitively imports auth-guards (getResponsesForExport ->
+// requirePollOwner), which pulls in @/auth + next/navigation at module load.
+// These stubs keep that graph resolvable under vitest; no test here exercises
+// auth, so they are inert with respect to assertions below.
+vi.mock("@/auth", () => ({ auth: vi.fn() }));
+vi.mock("next/navigation", () => ({ redirect: vi.fn() }));
 
 import {
   getResults,

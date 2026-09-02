@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
+import { FileSpreadsheet } from "lucide-react";
 import { requireUser, requirePollOwner, AuthorizationError } from "@/lib/auth-guards";
 import { getResults, getVisibleComments } from "@/lib/queries/polls";
 import { Button } from "@/components/ui/button";
@@ -42,6 +43,12 @@ export default async function ResultsPage({
           </p>
         </div>
         <div className="flex gap-2">
+          <Button asChild size="sm" variant="outline">
+            <a href={`/polls/${id}/results/export`} download>
+              <FileSpreadsheet />
+              Export to Excel
+            </a>
+          </Button>
           <Button asChild size="sm" variant="outline">
             <Link href={`/polls/${id}/invite`}>Invite</Link>
           </Button>

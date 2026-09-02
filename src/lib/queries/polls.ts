@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/auth-guards";
+import { requirePollOwner } from "@/lib/auth-guards";
 import { displayNameFromEmail } from "@/lib/utils";
 import type { CommentVisibility } from "@prisma/client";
 
@@ -342,3 +343,75 @@ function stripQuestion(q: {
     order: q.order,
   };
 }
+
+
+/**
+ * OWNER-ONLY: raw per-respondent data for the Excel export's "Responses" sheet.
+ *
+ * Ownership is enforced server-side via requirePollOwner (throws
+ * AuthorizationError for non-owners), so the underlying respondent identities
+ * (id/email) never leave the server for anyone but the poll creator. Callers
+ * MUST still respect Poll.commentVisibility when rendering (the ANONYMOUS mode
+ * forbids emitting per-respondent comments — see buildResultsWorkbook).
+ *
+ * Returns the poll (title + commentVisibility), its questions in display order,
+ * and every Response with its answers (values, comment, and ranked selections).
+ */
+export async function getResponsesForExport(
+  pollId: string,
+  viewer: SessionUser
+) {
+  // Throws AuthorizationError if the viewer is not the poll owner.
+  await requirePollOwner(pollId, viewer);
+
+  const poll = await prisma.poll.findUnique({
+    where: { id: pollId },
+    select: {
+      id: true,
+      title: true,
+      commentVisibility: true,
+      questions: {
+        orderBy: { order: "asc" },
+        select: {
+          id: true,
+          prompt: true,
+          type: true,
+          order: true,
+          config: true,
+        },
+      },
+      responses: {
+        orderBy: { submittedAt: "asc" },
+        select: {
+          id: true,
+          submittedAt: true,
+          respondent: { select: { id: true, email: true } },
+          answers: {
+            select: {
+              questionId: true,
+              textValue: true,
+              numberValue: true,
+              comment: true,
+              // Order ranked selections so "1. A; 2. C" rendering is stable
+              // (NULL ranks sort first, harmless for non-ranked questions).
+              selectedOptions: {
+                orderBy: { rank: "asc" },
+                select: {
+                  rank: true,
+                  option: { select: { id: true, label: true } },
+                },
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  // requirePollOwner already guaranteed existence + ownership.
+  return poll!;
+}
+
+export type ResponsesForExport = NonNullable<
+  Awaited<ReturnType<typeof getResponsesForExport>>
+>;
