@@ -1,5 +1,7 @@
 import { prisma } from "@/lib/db";
 import type { SessionUser } from "@/lib/auth-guards";
+import { displayNameFromEmail } from "@/lib/utils";
+import type { CommentVisibility } from "@prisma/client";
 
 /** Polls created by the user, with counts for the dashboard cards. */
 export async function getMyPolls(userId: string) {
@@ -104,6 +106,97 @@ export async function getPollForRespondent(pollId: string, user: SessionUser) {
   });
 
   return { poll, existingResponse, isOwner: poll.creatorId === user.id };
+}
+
+/** A single visible comment, attributed unless the poll mode strips identity. */
+export type VisibleComment = {
+  comment: string;
+  author: { id: string; name: string } | null;
+};
+
+export type VisibleComments = {
+  mode: CommentVisibility;
+  byQuestion: Record<string, VisibleComment[]>;
+};
+
+/**
+ * Server-side comment visibility resolver — the single source of truth for who
+ * may see per-question comments and how they are attributed.
+ *
+ * Access is gated behind the SAME filter as getPollForRespondent (owner OR a
+ * published poll with a non-revoked invite); an unauthorized viewer gets null
+ * and never learns a comment exists.
+ *
+ * Attribution by poll mode:
+ *   - ANONYMOUS: comments visible to everyone who can view the poll, but the
+ *     author id/email NEVER leaves the server (author = null for all viewers,
+ *     including the owner).
+ *   - EDITORS (default): owner-only. Non-owners receive an EMPTY map — comments
+ *     are never sent to the client for non-owners.
+ *   - EVERYONE: authored (name = email local-part, id = user id). Gating of
+ *     peer visibility (respondent must have submitted first) is enforced by the
+ *     caller; the owner always sees comments on results.
+ */
+export async function getVisibleComments(
+  pollId: string,
+  viewer: SessionUser
+): Promise<VisibleComments | null> {
+  const poll = await prisma.poll.findFirst({
+    where: {
+      id: pollId,
+      OR: [
+        { creatorId: viewer.id },
+        {
+          isPublished: true,
+          invites: {
+            some: {
+              status: { not: "REVOKED" },
+              OR: [{ userId: viewer.id }, { email: viewer.email }],
+            },
+          },
+        },
+      ],
+    },
+    select: { creatorId: true, commentVisibility: true },
+  });
+
+  if (!poll) return null;
+
+  const mode = poll.commentVisibility;
+  const isOwner = poll.creatorId === viewer.id;
+
+  // EDITORS: owner-only. Never send comments to non-owners.
+  if (mode === "EDITORS" && !isOwner) {
+    return { mode, byQuestion: {} };
+  }
+
+  const answers = await prisma.answer.findMany({
+    where: { comment: { not: null }, response: { pollId } },
+    select: {
+      questionId: true,
+      comment: true,
+      response: {
+        select: { respondent: { select: { id: true, email: true } } },
+      },
+    },
+  });
+
+  const byQuestion: Record<string, VisibleComment[]> = {};
+  for (const a of answers) {
+    const text = a.comment?.trim();
+    if (!text) continue;
+    // In ANONYMOUS, id/email MUST NOT leave the server.
+    const author =
+      mode === "ANONYMOUS"
+        ? null
+        : {
+            id: a.response.respondent.id,
+            name: displayNameFromEmail(a.response.respondent.email),
+          };
+    (byQuestion[a.questionId] ??= []).push({ comment: text, author });
+  }
+
+  return { mode, byQuestion };
 }
 
 /** Owner-only: full poll for editing. */

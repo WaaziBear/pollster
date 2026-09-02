@@ -25,6 +25,7 @@ const validPoll = {
   title: "Survey",
   description: "desc",
   isPublished: true,
+  commentVisibility: "EDITORS" as const,
   questions: [
     { type: "SINGLE_CHOICE" as const, prompt: "One?", required: false, options: [{ label: "A" }, { label: "B" }] },
     { type: "MULTI_CHOICE" as const, prompt: "Many?", required: true, options: [{ label: "X" }, { label: "Y" }], config: { maxSelections: 2 } },
@@ -97,11 +98,35 @@ describe("createPollAction", () => {
     expect((byType.get("MULTI_CHOICE") as { config: unknown }).config).toEqual({ maxSelections: 2 });
   });
 
+  it("persists the selected commentVisibility on create", async () => {
+    const res = await createPollAction({ ...validPoll, commentVisibility: "EVERYONE" });
+    expect(res.ok).toBe(true);
+    expect(prismaMock.poll.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ commentVisibility: "EVERYONE" }),
+      })
+    );
+  });
+
+  it("defaults commentVisibility to EDITORS on create when omitted", async () => {
+    // Omit commentVisibility entirely; pollSchema default should apply.
+    const { commentVisibility: _omit, ...noVisibility } = validPoll;
+    void _omit;
+    const res = await createPollAction(noVisibility as typeof validPoll);
+    expect(res.ok).toBe(true);
+    expect(prismaMock.poll.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ commentVisibility: "EDITORS" }),
+      })
+    );
+  });
+
   it("persists config.ranked=true for a ranked multi-choice question", async () => {
     const rankedPoll = {
       title: "Ranked survey",
       description: "",
       isPublished: true,
+      commentVisibility: "EDITORS" as const,
       questions: [
         {
           type: "MULTI_CHOICE" as const,
@@ -129,6 +154,7 @@ describe("updatePollAction", () => {
       title: "Ranked survey",
       description: "",
       isPublished: true,
+      commentVisibility: "EDITORS" as const,
       questions: [
         {
           type: "MULTI_CHOICE" as const,
@@ -156,6 +182,7 @@ describe("updatePollAction", () => {
       title: "Plain survey",
       description: "",
       isPublished: true,
+      commentVisibility: "EDITORS" as const,
       questions: [
         {
           type: "MULTI_CHOICE" as const,
@@ -173,8 +200,18 @@ describe("updatePollAction", () => {
     expect((questions[0].config as Record<string, unknown>).ranked).toBeUndefined();
   });
 
-  it("blocks a non-owner from updating", async () => {
-    const { AuthorizationError } = await import("@/lib/auth-guards");
+  it("persists the updated commentVisibility through the nested replace write", async () => {
+    const res = await updatePollAction("poll1", { ...validPoll, commentVisibility: "ANONYMOUS" });
+    expect(res.ok).toBe(true);
+    expect(prismaMock.poll.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: "poll1" },
+        data: expect.objectContaining({ commentVisibility: "ANONYMOUS" }),
+      })
+    );
+  });
+
+  it("blocks a non-owner from updating", async () => {    const { AuthorizationError } = await import("@/lib/auth-guards");
     guardsMock.requirePollOwner.mockRejectedValueOnce(new AuthorizationError("nope"));
     const res = await updatePollAction("poll1", validPoll);
     expect(res.ok).toBe(false);

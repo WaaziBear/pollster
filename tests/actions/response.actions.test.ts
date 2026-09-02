@@ -190,6 +190,79 @@ describe("submitResponseAction - server-side answer validation", () => {
   });
 });
 
+describe("submitResponseAction - comments", () => {
+  function createDataFor(questionId: string) {
+    const call = txMock.answer.create.mock.calls.find(
+      (c) => (c[0] as { data: { questionId: string } }).data.questionId === questionId
+    );
+    return call?.[0].data;
+  }
+
+  it("persists a trimmed comment alongside a valued answer", async () => {
+    const res = await submitResponseAction({
+      pollId: "poll1",
+      answers: [{ questionId: "q-text", textValue: "hello", comment: "  good q  " }],
+    });
+    expect(res.ok).toBe(true);
+    const data = createDataFor("q-text");
+    expect(data.comment).toBe("good q");
+    expect(data.textValue).toBe("hello");
+  });
+
+  it("persists a comment-only row for an otherwise-empty optional question", async () => {
+    const res = await submitResponseAction({
+      pollId: "poll1",
+      answers: [{ questionId: "q-text", comment: "just a note" }],
+    });
+    expect(res.ok).toBe(true);
+    const data = createDataFor("q-text");
+    expect(data.comment).toBe("just a note");
+    expect(data.textValue).toBeNull();
+    expect(data.numberValue).toBeNull();
+    // No options for a comment-only row.
+    expect(data.selectedOptions).toBeUndefined();
+  });
+
+  it("stores NULL comment when none is provided", async () => {
+    const res = await submitResponseAction({
+      pollId: "poll1",
+      answers: [{ questionId: "q-rating", numberValue: 3 }],
+    });
+    expect(res.ok).toBe(true);
+    const data = createDataFor("q-rating");
+    expect(data.comment).toBeNull();
+  });
+
+  it("does NOT persist a row for an empty optional question with a blank comment", async () => {
+    const res = await submitResponseAction({
+      pollId: "poll1",
+      answers: [{ questionId: "q-text", comment: "   " }],
+    });
+    expect(res.ok).toBe(true);
+    // Nothing to persist -> no answer.create calls.
+    expect(txMock.answer.create).not.toHaveBeenCalled();
+  });
+
+  it("a comment ALONE does not satisfy a required question", async () => {
+    prismaMock.poll.findUnique.mockResolvedValue({
+      id: "poll1",
+      isPublished: true,
+      creatorId: "user-owner",
+      questions: [
+        { id: "q-req", type: "FREE_TEXT", required: true, config: null, options: [] },
+      ],
+    });
+    const res = await submitResponseAction({
+      pollId: "poll1",
+      answers: [{ questionId: "q-req", comment: "I have thoughts" }],
+    });
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.fieldErrors?.["q-req"]).toBeTruthy();
+    expect(prismaMock.$transaction).not.toHaveBeenCalled();
+  });
+});
+
+
 describe("submitResponseAction - MULTI_CHOICE ranking", () => {
   // Find the answer.create payload persisted for a given question.
   function createDataFor(questionId: string) {

@@ -13,8 +13,13 @@ import {
   DraftQuestion,
   newQuestion,
   QUESTION_TYPE_LABELS,
+  COMMENT_VISIBILITY_LABELS,
 } from "./draft";
-import type { PollInput, QuestionTypeInput } from "@/lib/validation/poll";
+import type {
+  PollInput,
+  QuestionTypeInput,
+  CommentVisibilityInput,
+} from "@/lib/validation/poll";
 import { createPollAction, updatePollAction } from "@/actions/poll.actions";
 import { Plus } from "lucide-react";
 
@@ -23,6 +28,7 @@ function draftToInput(draft: DraftPoll, isPublished: boolean): PollInput {
     title: draft.title,
     description: draft.description,
     isPublished,
+    commentVisibility: draft.commentVisibility,
     questions: draft.questions.map((q) => ({
       type: q.type,
       prompt: q.prompt,
@@ -135,6 +141,29 @@ export function PollBuilder({
             onChange={(e) => setDraft((d) => ({ ...d, description: e.target.value }))}
             placeholder="A short explanation of what this poll is for."
           />
+        </div>
+        <div className="space-y-2">
+          <Label htmlFor="poll-comment-visibility">Comment visibility</Label>
+          <Select
+            id="poll-comment-visibility"
+            value={draft.commentVisibility}
+            onChange={(e) =>
+              setDraft((d) => ({
+                ...d,
+                commentVisibility: e.target.value as CommentVisibilityInput,
+              }))
+            }
+          >
+            {Object.entries(COMMENT_VISIBILITY_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            Controls who can see the optional per-question comments respondents
+            leave.
+          </p>
         </div>
       </div>
 

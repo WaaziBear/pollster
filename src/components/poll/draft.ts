@@ -1,4 +1,4 @@
-import type { QuestionTypeInput } from "@/lib/validation/poll";
+import type { QuestionTypeInput, CommentVisibilityInput } from "@/lib/validation/poll";
 
 export type DraftOption = { id: string; label: string };
 
@@ -19,6 +19,7 @@ export type DraftQuestion = {
 export type DraftPoll = {
   title: string;
   description: string;
+  commentVisibility: CommentVisibilityInput;
   questions: DraftQuestion[];
 };
 
@@ -27,6 +28,13 @@ export const QUESTION_TYPE_LABELS: Record<QuestionTypeInput, string> = {
   MULTI_CHOICE: "Multiple choice (checkbox)",
   FREE_TEXT: "Free text (short answer)",
   RATING: "Rating / scale",
+};
+
+/** Human-readable labels for the poll-level comment visibility policy. */
+export const COMMENT_VISIBILITY_LABELS: Record<CommentVisibilityInput, string> = {
+  ANONYMOUS: "Anonymous — everyone sees comments, authors hidden",
+  EDITORS: "Editors only — only you (the owner) see comments",
+  EVERYONE: "Everyone — respondents see each other's comments after answering",
 };
 
 let counter = 0;

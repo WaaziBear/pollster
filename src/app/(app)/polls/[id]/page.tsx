@@ -1,8 +1,9 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireUser } from "@/lib/auth-guards";
-import { getPollForRespondent } from "@/lib/queries/polls";
+import { getPollForRespondent, getVisibleComments } from "@/lib/queries/polls";
 import { AnswerForm, type AnswerFormQuestion } from "@/components/poll/answer-form";
+import { QuestionComments } from "@/components/poll/question-comments";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 
@@ -36,7 +37,7 @@ export default async function PollRespondPage({
   // Prefill from an existing response (edit-in-place).
   const initialAnswers: Record<
     string,
-    { selectedOptionIds: string[]; textValue: string; numberValue: number | null }
+    { selectedOptionIds: string[]; textValue: string; numberValue: number | null; comment: string }
   > = {};
   if (existingResponse) {
     for (const a of existingResponse.answers) {
@@ -44,9 +45,17 @@ export default async function PollRespondPage({
         selectedOptionIds: a.selectedOptions.map((s) => s.optionId),
         textValue: a.textValue ?? "",
         numberValue: a.numberValue ?? null,
+        comment: a.comment ?? "",
       };
     }
   }
+
+  // Peer comments are only surfaced once the viewer has submitted their own
+  // response (existingResponse present). Visibility/attribution is decided
+  // server-side by getVisibleComments per the poll's policy.
+  const commentsByQuestion = existingResponse
+    ? (await getVisibleComments(poll.id, user))?.byQuestion ?? {}
+    : {};
 
   return (
     <div className="space-y-6">
@@ -91,6 +100,30 @@ export default async function PollRespondPage({
           hasResponded={!!existingResponse}
         />
       )}
+
+      {existingResponse &&
+        questions.some((q) => (commentsByQuestion[q.id] ?? []).length > 0) && (
+          <div className="mx-auto max-w-2xl space-y-4">
+            <h2 className="text-lg font-semibold font-heading tracking-tight">
+              Comments
+            </h2>
+            {questions.map((q, i) => {
+              const comments = commentsByQuestion[q.id] ?? [];
+              if (comments.length === 0) return null;
+              return (
+                <div
+                  key={q.id}
+                  className="rounded-lg border bg-card p-4 shadow-sm"
+                >
+                  <p className="text-sm font-medium">
+                    {i + 1}. {q.prompt}
+                  </p>
+                  <QuestionComments comments={comments} />
+                </div>
+              );
+            })}
+          </div>
+        )}
     </div>
   );
 }

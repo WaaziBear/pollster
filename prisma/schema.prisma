@@ -26,6 +26,12 @@ enum InviteStatus {
   REVOKED
 }
 
+enum CommentVisibility {
+  ANONYMOUS
+  EDITORS
+  EVERYONE
+}
+
 model User {
   id           String   @id @default(cuid())
   email        String   @unique
@@ -46,6 +52,10 @@ model Poll {
   isPublished Boolean  @default(false) // draft vs open for answers
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Poll-level comment visibility policy (creator-selected). Governs how
+  // per-question optional comments are surfaced. Default EDITORS = owner-only.
+  commentVisibility CommentVisibility @default(EDITORS)
 
   creatorId String
   creator   User   @relation("PollCreator", fields: [creatorId], references: [id], onDelete: Cascade)
@@ -131,6 +141,9 @@ model Answer {
   // Type-specific value storage (only the relevant field is populated):
   textValue   String? // FREE_TEXT
   numberValue Int? // RATING
+  // Optional free-text comment attached to any question (independent of the
+  // answer value). Visibility governed by Poll.commentVisibility.
+  comment     String?
   // choice answers (single or multi) via join table below:
   selectedOptions AnswerOption[]
 

@@ -27,10 +27,11 @@ type Value = {
   selectedOptionIds: string[];
   textValue: string;
   numberValue: number | null;
+  comment: string;
 };
 
 function emptyValue(): Value {
-  return { selectedOptionIds: [], textValue: "", numberValue: null };
+  return { selectedOptionIds: [], textValue: "", numberValue: null, comment: "" };
 }
 
 export function AnswerForm({
@@ -95,6 +96,7 @@ export function AnswerForm({
         textValue: values[q.id].textValue || undefined,
         numberValue:
           values[q.id].numberValue === null ? undefined : values[q.id].numberValue!,
+        comment: values[q.id].comment.trim() || undefined,
       })),
     };
 
@@ -139,6 +141,13 @@ export function AnswerForm({
             onNumber={(n) => setValue(q.id, { numberValue: n })}
           />
 
+          <CommentField
+            questionId={q.id}
+            value={values[q.id].comment}
+            disabled={readOnly}
+            onChange={(text) => setValue(q.id, { comment: text })}
+          />
+
           <FieldError messages={fieldErrors[q.id]} />
         </div>
       ))}
@@ -172,6 +181,42 @@ export function AnswerForm({
           </Button>
         </div>
       )}
+    </div>
+  );
+}
+
+const COMMENT_MAX_LENGTH = 1000;
+
+/** Optional free-text comment attached to any question. */
+function CommentField({
+  questionId,
+  value,
+  disabled,
+  onChange,
+}: {
+  questionId: string;
+  value: string;
+  disabled: boolean;
+  onChange: (text: string) => void;
+}) {
+  const id = `${questionId}-comment`;
+  return (
+    <div className="space-y-1">
+      <Label htmlFor={id} className="text-xs font-normal text-muted-foreground">
+        Add a comment (optional)
+      </Label>
+      <Textarea
+        id={id}
+        value={value}
+        maxLength={COMMENT_MAX_LENGTH}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="Add a comment (optional)"
+        className="min-h-[60px]"
+      />
+      <p className="text-xs text-muted-foreground">
+        {value.length}/{COMMENT_MAX_LENGTH}
+      </p>
     </div>
   );
 }

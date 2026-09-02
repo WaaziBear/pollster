@@ -1,10 +1,11 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
 import { requireUser, requirePollOwner, AuthorizationError } from "@/lib/auth-guards";
-import { getResults } from "@/lib/queries/polls";
+import { getResults, getVisibleComments } from "@/lib/queries/polls";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { QuestionComments } from "@/components/poll/question-comments";
 
 export default async function ResultsPage({
   params,
@@ -24,6 +25,11 @@ export default async function ResultsPage({
 
   const results = await getResults(id);
   if (!results) notFound();
+
+  // Owner view: comments are surfaced per the poll's visibility policy
+  // (ANONYMOUS strips authorship; EVERYONE/EDITORS attribute to the owner).
+  const visibleComments = await getVisibleComments(id, user);
+  const commentsByQuestion = visibleComments?.byQuestion ?? {};
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
@@ -76,6 +82,7 @@ export default async function ResultsPage({
                 />
               )}
               {q.kind === "text" && <TextResult texts={q.texts} />}
+              <QuestionComments comments={commentsByQuestion[q.id] ?? []} />
             </CardContent>
           </Card>
         ))}

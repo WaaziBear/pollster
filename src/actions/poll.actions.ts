@@ -58,6 +58,7 @@ export async function createPollAction(
       title: data.title,
       description: data.description || null,
       isPublished: data.isPublished,
+      commentVisibility: data.commentVisibility,
       creatorId: user.id,
       questions: { create: buildQuestionsCreate(data.questions) },
     },
@@ -97,6 +98,7 @@ export async function updatePollAction(
       title: data.title,
       description: data.description || null,
       isPublished: data.isPublished,
+      commentVisibility: data.commentVisibility,
       questions: {
         deleteMany: {},
         create: buildQuestionsCreate(data.questions),

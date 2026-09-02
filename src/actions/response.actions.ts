@@ -52,6 +52,7 @@ export async function submitResponseAction(
     questionId: string;
     textValue: string | null;
     numberValue: number | null;
+    comment: string | null;
     optionIds: string[];
     // When true, optionIds order encodes rank (1-based); persisted on AnswerOption.
     ranked: boolean;
@@ -67,6 +68,9 @@ export async function submitResponseAction(
       fieldErrors[q.id] = [...(fieldErrors[q.id] ?? []), msg];
     };
 
+    // Optional per-question comment (any type). Never satisfies `required`.
+    const comment = a?.comment?.trim() || null;
+
     const isEmpty =
       !a ||
       (a.selectedOptionIds.length === 0 &&
@@ -74,7 +78,23 @@ export async function submitResponseAction(
         (a.numberValue === undefined || a.numberValue === null));
 
     if (isEmpty) {
-      if (q.required) addError("This question is required.");
+      // A comment alone does NOT satisfy a required question.
+      if (q.required) {
+        addError("This question is required.");
+        continue;
+      }
+      // Persist a comment-only Answer row when the value is empty but the
+      // respondent left a comment (no value fields, no options).
+      if (comment) {
+        toPersist.push({
+          questionId: q.id,
+          textValue: null,
+          numberValue: null,
+          comment,
+          optionIds: [],
+          ranked: false,
+        });
+      }
       continue;
     }
 
@@ -89,7 +109,7 @@ export async function submitResponseAction(
           addError("Invalid option selected.");
           break;
         }
-        toPersist.push({ questionId: q.id, textValue: null, numberValue: null, optionIds: ids, ranked: false });
+        toPersist.push({ questionId: q.id, textValue: null, numberValue: null, comment, optionIds: ids, ranked: false });
         break;
       }
       case "MULTI_CHOICE": {
@@ -107,7 +127,7 @@ export async function submitResponseAction(
         const ranked = config.ranked === true;
         // de-dup, preserving selection/rank order
         const unique = Array.from(new Set(ids));
-        toPersist.push({ questionId: q.id, textValue: null, numberValue: null, optionIds: unique, ranked });
+        toPersist.push({ questionId: q.id, textValue: null, numberValue: null, comment, optionIds: unique, ranked });
         break;
       }
       case "FREE_TEXT": {
@@ -117,7 +137,7 @@ export async function submitResponseAction(
           addError(`Answer must be at most ${maxLength} characters.`);
           break;
         }
-        toPersist.push({ questionId: q.id, textValue: text, numberValue: null, optionIds: [], ranked: false });
+        toPersist.push({ questionId: q.id, textValue: text, numberValue: null, comment, optionIds: [], ranked: false });
         break;
       }
       case "RATING": {
@@ -132,7 +152,7 @@ export async function submitResponseAction(
           addError(`Rating must be between ${min} and ${max}.`);
           break;
         }
-        toPersist.push({ questionId: q.id, textValue: null, numberValue: n, optionIds: [], ranked: false });
+        toPersist.push({ questionId: q.id, textValue: null, numberValue: n, comment, optionIds: [], ranked: false });
         break;
       }
       default:
@@ -162,6 +182,7 @@ export async function submitResponseAction(
           questionId: va.questionId,
           textValue: va.textValue,
           numberValue: va.numberValue,
+          comment: va.comment,
           selectedOptions: va.optionIds.length
             ? { create: va.optionIds.map((optionId, i) => ({ optionId, rank: va.ranked ? i + 1 : null })) }
             : undefined,

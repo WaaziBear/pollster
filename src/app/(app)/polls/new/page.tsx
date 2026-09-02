@@ -11,6 +11,7 @@ export default async function NewPollPage() {
   const initial: DraftPoll = {
     title: "",
     description: "",
+    commentVisibility: "EDITORS",
     questions: [newQuestion("SINGLE_CHOICE")],
   };
 

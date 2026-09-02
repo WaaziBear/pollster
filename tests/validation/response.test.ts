@@ -27,6 +27,34 @@ describe("answerInputSchema", () => {
     const res = answerInputSchema.safeParse({ textValue: "x" });
     expect(res.success).toBe(false);
   });
+
+  it("accepts an optional comment", () => {
+    const res = answerInputSchema.safeParse({ questionId: "q1", comment: "nice" });
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data.comment).toBe("nice");
+  });
+
+  it("trims the comment", () => {
+    const res = answerInputSchema.safeParse({ questionId: "q1", comment: "  hi  " });
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data.comment).toBe("hi");
+  });
+
+  it("accepts a comment at the 1000-char limit", () => {
+    const res = answerInputSchema.safeParse({
+      questionId: "q1",
+      comment: "a".repeat(1000),
+    });
+    expect(res.success).toBe(true);
+  });
+
+  it("rejects a comment longer than 1000 chars", () => {
+    const res = answerInputSchema.safeParse({
+      questionId: "q1",
+      comment: "a".repeat(1001),
+    });
+    expect(res.success).toBe(false);
+  });
 });
 
 describe("submitResponseSchema", () => {

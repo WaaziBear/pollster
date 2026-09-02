@@ -111,6 +111,34 @@ describe("pollSchema", () => {
     });
     expect(res.success).toBe(false);
   });
+
+  it("defaults commentVisibility to EDITORS", () => {
+    const res = pollSchema.safeParse({
+      title: "My survey",
+      questions: [freeText],
+    });
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data.commentVisibility).toBe("EDITORS");
+  });
+
+  it("accepts an explicit commentVisibility value", () => {
+    const res = pollSchema.safeParse({
+      title: "My survey",
+      commentVisibility: "ANONYMOUS",
+      questions: [freeText],
+    });
+    expect(res.success).toBe(true);
+    if (res.success) expect(res.data.commentVisibility).toBe("ANONYMOUS");
+  });
+
+  it("rejects an unknown commentVisibility value", () => {
+    const res = pollSchema.safeParse({
+      title: "My survey",
+      commentVisibility: "PUBLIC",
+      questions: [freeText],
+    });
+    expect(res.success).toBe(false);
+  });
 });
 
 describe("inviteSchema", () => {

@@ -3,11 +3,17 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 const prismaMock = vi.hoisted(() => ({
   poll: { findUnique: vi.fn(), findMany: vi.fn(), findFirst: vi.fn() },
   response: { findUnique: vi.fn() },
+  answer: { findMany: vi.fn() },
 }));
 
 vi.mock("@/lib/db", () => ({ prisma: prismaMock }));
 
-import { getResults, getSharedPolls, getPollForRespondent } from "@/lib/queries/polls";
+import {
+  getResults,
+  getSharedPolls,
+  getPollForRespondent,
+  getVisibleComments,
+} from "@/lib/queries/polls";
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -212,5 +218,125 @@ describe("getSharedPolls query", () => {
     const res = await getSharedPolls("user1", "user1@example.com");
     expect(res[0].hasResponded).toBe(true);
     expect(res[1].hasResponded).toBe(false);
+  });
+});
+
+describe("getVisibleComments", () => {
+  const owner = { id: "owner", email: "owner@example.com" };
+  const other = { id: "u2", email: "u2@example.com" };
+
+  // Two comments from two respondents on one question.
+  function seedAnswers() {
+    prismaMock.answer.findMany.mockResolvedValue([
+      {
+        questionId: "q1",
+        comment: "  first  ",
+        response: { respondent: { id: "r-alice", email: "alice@example.com" } },
+      },
+      {
+        questionId: "q2",
+        comment: "second",
+        response: { respondent: { id: "r-bob", email: "bob@work.io" } },
+      },
+    ]);
+  }
+
+  it("returns null for an unauthorized viewer (access filter miss)", async () => {
+    prismaMock.poll.findFirst.mockResolvedValue(null);
+    await expect(getVisibleComments("poll1", other)).resolves.toBeNull();
+    expect(prismaMock.answer.findMany).not.toHaveBeenCalled();
+  });
+
+  it("EDITORS + owner: returns authored comments grouped by question", async () => {
+    prismaMock.poll.findFirst.mockResolvedValue({
+      creatorId: "owner",
+      commentVisibility: "EDITORS",
+    });
+    seedAnswers();
+    const res = await getVisibleComments("poll1", owner);
+    expect(res).not.toBeNull();
+    if (!res) return;
+    expect(res.mode).toBe("EDITORS");
+    expect(res.byQuestion.q1).toEqual([
+      { comment: "first", author: { id: "r-alice", name: "alice" } },
+    ]);
+    expect(res.byQuestion.q2).toEqual([
+      { comment: "second", author: { id: "r-bob", name: "bob" } },
+    ]);
+  });
+
+  it("EDITORS + non-owner: returns an EMPTY map and never queries comments", async () => {
+    prismaMock.poll.findFirst.mockResolvedValue({
+      creatorId: "owner",
+      commentVisibility: "EDITORS",
+    });
+    const res = await getVisibleComments("poll1", other);
+    expect(res).toEqual({ mode: "EDITORS", byQuestion: {} });
+    expect(prismaMock.answer.findMany).not.toHaveBeenCalled();
+  });
+
+  it("ANONYMOUS + owner: strips author id/email (author=null)", async () => {
+    prismaMock.poll.findFirst.mockResolvedValue({
+      creatorId: "owner",
+      commentVisibility: "ANONYMOUS",
+    });
+    seedAnswers();
+    const res = await getVisibleComments("poll1", owner);
+    if (!res) return;
+    expect(res.mode).toBe("ANONYMOUS");
+    expect(res.byQuestion.q1).toEqual([{ comment: "first", author: null }]);
+    expect(res.byQuestion.q2).toEqual([{ comment: "second", author: null }]);
+    // No id/email may appear anywhere in the serialized output.
+    const serialized = JSON.stringify(res);
+    expect(serialized).not.toContain("r-alice");
+    expect(serialized).not.toContain("alice@example.com");
+  });
+
+  it("ANONYMOUS + non-owner: also strips author (author=null)", async () => {
+    prismaMock.poll.findFirst.mockResolvedValue({
+      creatorId: "owner",
+      commentVisibility: "ANONYMOUS",
+    });
+    seedAnswers();
+    const res = await getVisibleComments("poll1", other);
+    if (!res) return;
+    expect(res.byQuestion.q1[0].author).toBeNull();
+  });
+
+  it("EVERYONE + owner: attributes comments (name = email local-part, id = user id)", async () => {
+    prismaMock.poll.findFirst.mockResolvedValue({
+      creatorId: "owner",
+      commentVisibility: "EVERYONE",
+    });
+    seedAnswers();
+    const res = await getVisibleComments("poll1", owner);
+    if (!res) return;
+    expect(res.mode).toBe("EVERYONE");
+    expect(res.byQuestion.q1[0].author).toEqual({ id: "r-alice", name: "alice" });
+    expect(res.byQuestion.q2[0].author).toEqual({ id: "r-bob", name: "bob" });
+  });
+
+  it("EVERYONE + non-owner: still returns authored comments", async () => {
+    prismaMock.poll.findFirst.mockResolvedValue({
+      creatorId: "owner",
+      commentVisibility: "EVERYONE",
+    });
+    seedAnswers();
+    const res = await getVisibleComments("poll1", other);
+    if (!res) return;
+    expect(res.byQuestion.q1[0].author).toEqual({ id: "r-alice", name: "alice" });
+  });
+
+  it("skips answers whose comment is empty/whitespace", async () => {
+    prismaMock.poll.findFirst.mockResolvedValue({
+      creatorId: "owner",
+      commentVisibility: "EVERYONE",
+    });
+    prismaMock.answer.findMany.mockResolvedValue([
+      { questionId: "q1", comment: "   ", response: { respondent: { id: "x", email: "x@y.z" } } },
+    ]);
+    const res = await getVisibleComments("poll1", owner);
+    if (!res) return;
+    expect(res.byQuestion).toEqual({});
   });
 });

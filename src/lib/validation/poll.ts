@@ -10,6 +10,15 @@ export const questionTypeSchema = z.enum([
 
 export type QuestionTypeInput = z.infer<typeof questionTypeSchema>;
 
+// Keep in sync with Prisma `CommentVisibility` enum.
+export const commentVisibilitySchema = z.enum([
+  "ANONYMOUS",
+  "EDITORS",
+  "EVERYONE",
+]);
+
+export type CommentVisibilityInput = z.infer<typeof commentVisibilitySchema>;
+
 const optionSchema = z.object({
   label: z.string().trim().min(1, "Option label is required").max(200),
 });
@@ -79,6 +88,7 @@ export const pollSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(150),
   description: z.string().trim().max(2000).optional().or(z.literal("")),
   isPublished: z.boolean().default(false),
+  commentVisibility: commentVisibilitySchema.default("EDITORS"),
   questions: z
     .array(questionSchema)
     .min(1, "Add at least one question")

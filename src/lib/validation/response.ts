@@ -16,6 +16,9 @@ export const answerInputSchema = z.object({
   textValue: z.string().max(10000).optional(),
   // RATING
   numberValue: z.number().int().optional(),
+  // Optional per-question comment (any question type). Independent of the
+  // answer value; persisted as Answer.comment and surfaced per poll policy.
+  comment: z.string().trim().max(1000).optional(),
 });
 
 export const submitResponseSchema = z.object({

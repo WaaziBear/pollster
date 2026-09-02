@@ -26,6 +26,7 @@ export default async function EditPollPage({
   const initial: DraftPoll = {
     title: poll.title,
     description: poll.description ?? "",
+    commentVisibility: poll.commentVisibility,
     questions: poll.questions.map((q): DraftQuestion => {
       const config = (q.config as Record<string, unknown> | null) ?? {};
       return {
