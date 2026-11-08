@@ -12,6 +12,7 @@ import {
   DraftPoll,
   DraftQuestion,
   newQuestion,
+  reorderQuestions,
   QUESTION_TYPE_LABELS,
   COMMENT_VISIBILITY_LABELS,
 } from "./draft";
@@ -22,6 +23,24 @@ import type {
 } from "@/lib/validation/poll";
 import { createPollAction, updatePollAction } from "@/actions/poll.actions";
 import { Plus } from "lucide-react";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
+  restrictToVerticalAxis,
+  restrictToParentElement,
+} from "@dnd-kit/modifiers";
 
 function draftToInput(draft: DraftPoll, isPublished: boolean): PollInput {
   return {
@@ -93,6 +112,26 @@ export function PollBuilder({
 
   const removeQuestion = (id: string) =>
     setDraft((d) => ({ ...d, questions: d.questions.filter((x) => x.id !== id) }));
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      // Small activation distance so a click on the handle's buttons/icon
+      // isn't swallowed as a drag.
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
+  const onDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    setDraft((d) => ({
+      ...d,
+      questions: reorderQuestions(d.questions, String(active.id), String(over.id)),
+    }));
+  };
 
   const submit = (isPublished: boolean) => {
     setError(null);
@@ -168,15 +207,29 @@ export function PollBuilder({
       </div>
 
       <div className="space-y-4">
-        {draft.questions.map((q, i) => (
-          <QuestionEditor
-            key={q.id}
-            question={q}
-            index={i}
-            onChange={(nq) => setQuestion(q.id, nq)}
-            onRemove={() => removeQuestion(q.id)}
-          />
-        ))}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          modifiers={[restrictToVerticalAxis, restrictToParentElement]}
+          onDragEnd={onDragEnd}
+        >
+          <SortableContext
+            items={draft.questions.map((q) => q.id)}
+            strategy={verticalListSortingStrategy}
+          >
+            <div className="space-y-4">
+              {draft.questions.map((q, i) => (
+                <QuestionEditor
+                  key={q.id}
+                  question={q}
+                  index={i}
+                  onChange={(nq) => setQuestion(q.id, nq)}
+                  onRemove={() => removeQuestion(q.id)}
+                />
+              ))}
+            </div>
+          </SortableContext>
+        </DndContext>
         {fieldErrors.questions && (
           <p role="alert" className="text-sm text-destructive-text">
             {fieldErrors.questions.join(" ")}

@@ -1,4 +1,5 @@
 import type { QuestionTypeInput, CommentVisibilityInput } from "@/lib/validation/poll";
+import { arrayMove } from "@dnd-kit/sortable";
 
 export type DraftOption = { id: string; label: string };
 
@@ -60,4 +61,23 @@ export function newQuestion(type: QuestionTypeInput = "SINGLE_CHOICE"): DraftQue
     ratingMax: 5,
     maxLength: 500,
   };
+}
+
+/**
+ * Move the question identified by `activeId` to the slot of `overId`, returning
+ * a NEW array (never mutates). Used by the poll builder's drag-to-reorder
+ * (dnd-kit onDragEnd). If either id is missing or they are the same, the
+ * original array is returned unchanged. Question `order` is derived from array
+ * index at save time, so reordering here is the whole feature.
+ */
+export function reorderQuestions(
+  questions: DraftQuestion[],
+  activeId: string,
+  overId: string
+): DraftQuestion[] {
+  if (activeId === overId) return questions;
+  const oldIndex = questions.findIndex((q) => q.id === activeId);
+  const newIndex = questions.findIndex((q) => q.id === overId);
+  if (oldIndex === -1 || newIndex === -1) return questions;
+  return arrayMove(questions, oldIndex, newIndex);
 }

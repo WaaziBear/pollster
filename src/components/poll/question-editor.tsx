@@ -6,6 +6,8 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Checkbox } from "@/components/ui/checkbox";
+import { useSortable } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import {
   DraftQuestion,
   QUESTION_TYPE_LABELS,
@@ -28,6 +30,21 @@ export function QuestionEditor({
   error?: string;
 }) {
   const set = (patch: Partial<DraftQuestion>) => onChange({ ...question, ...patch });
+
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    setActivatorNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: question.id });
+
+  const style = {
+    transform: CSS.Translate.toString(transform),
+    transition,
+  } as const;
 
   const changeType = (type: QuestionTypeInput) => {
     const needsOptions = type === "SINGLE_CHOICE" || type === "MULTI_CHOICE";
@@ -56,9 +73,24 @@ export function QuestionEditor({
   const isChoice = question.type === "SINGLE_CHOICE" || question.type === "MULTI_CHOICE";
 
   return (
-    <div className="rounded-lg border bg-card p-4 shadow-sm space-y-4">
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`rounded-lg border bg-card p-4 shadow-sm space-y-4 ${
+        isDragging ? "relative z-10 shadow-lg" : ""
+      }`}
+    >
       <div className="flex items-center gap-2">
-        <GripVertical className="h-4 w-4 text-muted-foreground" aria-hidden />
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          className="-ml-1 flex h-7 w-7 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring active:cursor-grabbing"
+          aria-label={`Drag to reorder question ${index + 1}`}
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="h-4 w-4" aria-hidden />
+        </button>
         <span className="text-sm font-medium">Question {index + 1}</span>
         <Button
           type="button"
