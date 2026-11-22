@@ -63,10 +63,12 @@ export type SharedPollCardData = {
   creator: { email: string; name: string | null };
   _count: { questions: number };
   hasResponded: boolean;
-  // When present, the poll is shared via an access GRANT: the card shows the
-  // role action (EDITOR -> Edit; RESULTS_VIEWER -> Results) PLUS an Answer
-  // action, since grantees may also answer a published poll. When null/absent,
-  // the poll is shared via an invite and the only action is Answer.
+  // When present, the poll is shared via an access GRANT. The card surfaces the
+  // grantee's capabilities (all of which are enforced server-side):
+  //   EDITOR         -> Edit, Invite, Results, Answer
+  //   RESULTS_VIEWER -> Results, Answer
+  // When null/absent, the poll is shared via an invite and the only action is
+  // Answer.
   role?: "EDITOR" | "RESULTS_VIEWER" | null;
 };
 
@@ -97,12 +99,22 @@ export function SharedPollCard({ poll }: { poll: SharedPollCardData }) {
         {poll._count.questions} questions
       </CardContent>
       <CardFooter className="mt-auto flex flex-wrap gap-2">
-        {/* Role-specific management action (grantees only). */}
+        {/* Editors manage content, manage invites, and view results —
+            matching their server-side capabilities. */}
         {poll.role === "EDITOR" && (
-          <Button asChild size="sm" variant="outline">
-            <Link href={`/polls/${poll.id}/edit`}>Edit</Link>
-          </Button>
+          <>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/polls/${poll.id}/edit`}>Edit</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/polls/${poll.id}/invite`}>Invite</Link>
+            </Button>
+            <Button asChild size="sm" variant="outline">
+              <Link href={`/polls/${poll.id}/results`}>Results</Link>
+            </Button>
+          </>
         )}
+        {/* Results viewers can only view results. */}
         {poll.role === "RESULTS_VIEWER" && (
           <Button asChild size="sm" variant="outline">
             <Link href={`/polls/${poll.id}/results`}>Results</Link>
