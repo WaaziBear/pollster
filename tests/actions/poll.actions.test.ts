@@ -27,6 +27,7 @@ const validPoll = {
   title: "Survey",
   description: "desc",
   isPublished: true,
+  isPublic: false,
   commentVisibility: "EDITORS" as const,
   questions: [
     { type: "SINGLE_CHOICE" as const, prompt: "One?", required: false, options: [{ label: "A" }, { label: "B" }] },
@@ -110,6 +111,28 @@ describe("createPollAction", () => {
     );
   });
 
+  it("persists isPublic (public-link mode) on create", async () => {
+    const res = await createPollAction({ ...validPoll, isPublic: true });
+    expect(res.ok).toBe(true);
+    expect(prismaMock.poll.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isPublic: true }),
+      })
+    );
+  });
+
+  it("defaults isPublic to false on create when omitted (invite-only)", async () => {
+    const { isPublic: _omit, ...noPublic } = validPoll;
+    void _omit;
+    const res = await createPollAction(noPublic as typeof validPoll);
+    expect(res.ok).toBe(true);
+    expect(prismaMock.poll.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ isPublic: false }),
+      })
+    );
+  });
+
   it("defaults commentVisibility to EDITORS on create when omitted", async () => {
     // Omit commentVisibility entirely; pollSchema default should apply.
     const { commentVisibility: _omit, ...noVisibility } = validPoll;
@@ -128,6 +151,7 @@ describe("createPollAction", () => {
       title: "Ranked survey",
       description: "",
       isPublished: true,
+      isPublic: false,
       commentVisibility: "EDITORS" as const,
       questions: [
         {
@@ -156,6 +180,7 @@ describe("updatePollAction", () => {
       title: "Ranked survey",
       description: "",
       isPublished: true,
+      isPublic: false,
       commentVisibility: "EDITORS" as const,
       questions: [
         {
@@ -184,6 +209,7 @@ describe("updatePollAction", () => {
       title: "Plain survey",
       description: "",
       isPublished: true,
+      isPublic: false,
       commentVisibility: "EDITORS" as const,
       questions: [
         {

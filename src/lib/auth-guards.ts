@@ -135,15 +135,20 @@ export async function requireResultsAccess(pollId: string, user: SessionUser) {
 }
 
 /**
- * Authorization predicate for viewing/answering a poll.
+ * Authorization predicate for answering a poll. This is the SINGLE source of
+ * truth for submit access and MUST stay in sync with getPollForRespondent
+ * (the form-render gate) — divergence there previously showed editors a form
+ * they could not submit.
  *
- * A user may access poll P iff:
+ * A user may answer poll P iff:
  *   - they are the creator (any state), OR
- *   - the poll isPublished AND a non-REVOKED Invite exists matching the user
- *     by userId OR by normalized email.
+ *   - the poll isPublished AND one of:
+ *       - a non-REVOKED Invite matches them by userId OR normalized email, OR
+ *       - a PollAccess grant (EDITOR or RESULTS_VIEWER) matches them, OR
+ *       - the poll isPublic (anyone with the link; sign-in still required).
  *
- * This is enforced entirely in the DB query — an unauthorized user cannot even
- * fetch another poll's questions.
+ * Enforced entirely in the DB query — an unauthorized user cannot even fetch
+ * another poll's questions.
  */
 export async function canAccessPoll(
   pollId: string,
@@ -156,12 +161,22 @@ export async function canAccessPoll(
         { creatorId: user.id },
         {
           isPublished: true,
-          invites: {
-            some: {
-              status: { not: "REVOKED" },
-              OR: [{ userId: user.id }, { email: user.email }],
+          OR: [
+            {
+              invites: {
+                some: {
+                  status: { not: "REVOKED" },
+                  OR: [{ userId: user.id }, { email: user.email }],
+                },
+              },
             },
-          },
+            {
+              accessGrants: {
+                some: { OR: [{ userId: user.id }, { email: user.email }] },
+              },
+            },
+            { isPublic: true },
+          ],
         },
       ],
     },

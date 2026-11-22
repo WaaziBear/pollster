@@ -9,8 +9,9 @@ import { ActionResult, fail, ok } from "@/types/actions";
 /**
  * Submit (or edit-in-place update) a response to a poll.
  *
- * Security-critical: the caller MUST be an invitee or the owner (canAccessPoll,
- * enforced against the DB). Every answer is re-validated server-side against
+ * Security-critical: the caller MUST pass canAccessPoll (owner, a non-revoked
+ * invitee, an EDITOR/RESULTS_VIEWER grantee, or — on a public poll — any
+ * signed-in user), enforced against the DB. Every answer is re-validated against
  * the question's ACTUAL type/config — the client is never trusted:
  *   - SINGLE_CHOICE: exactly one selected option, belonging to the question.
  *   - MULTI_CHOICE:  options belong to the question; respects maxSelections.

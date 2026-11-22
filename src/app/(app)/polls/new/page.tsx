@@ -12,6 +12,7 @@ export default async function NewPollPage() {
     title: "",
     description: "",
     commentVisibility: "EDITORS",
+    isPublic: false,
     questions: [newQuestion("SINGLE_CHOICE")],
   };
 

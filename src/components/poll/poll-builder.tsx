@@ -47,6 +47,7 @@ function draftToInput(draft: DraftPoll, isPublished: boolean): PollInput {
     title: draft.title,
     description: draft.description,
     isPublished,
+    isPublic: draft.isPublic,
     commentVisibility: draft.commentVisibility,
     questions: draft.questions.map((q) => ({
       type: q.type,
@@ -203,6 +204,27 @@ export function PollBuilder({
             Controls who can see the optional per-question comments respondents
             leave.
           </p>
+        </div>
+        <div className="space-y-2">
+          <div className="flex items-start gap-3">
+            <input
+              id="poll-public"
+              type="checkbox"
+              checked={draft.isPublic}
+              onChange={(e) =>
+                setDraft((d) => ({ ...d, isPublic: e.target.checked }))
+              }
+              className="mt-1 h-4 w-4 rounded border-input accent-primary"
+            />
+            <div className="space-y-1">
+              <Label htmlFor="poll-public">Public — anyone with the link can answer</Label>
+              <p className="text-xs text-muted-foreground">
+                When on and the poll is published, anyone who opens the link can
+                answer without an invite. They still sign in, so each person can
+                submit once. Leave off to keep it invite-only.
+              </p>
+            </div>
+          </div>
         </div>
       </div>
 

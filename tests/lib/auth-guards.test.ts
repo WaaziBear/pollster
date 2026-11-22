@@ -41,27 +41,35 @@ beforeEach(() => {
 });
 
 describe("canAccessPoll", () => {
-  it("builds an authorization-scoped query (owner OR non-revoked invite)", async () => {
+  it("builds an authorization-scoped query (owner OR published + invite/grant/public)", async () => {
     prismaMock.poll.findFirst.mockResolvedValue({ id: "poll1", creatorId: owner.id });
     await canAccessPoll("poll1", invitee);
 
     const arg = prismaMock.poll.findFirst.mock.calls[0][0];
     expect(arg.where.id).toBe("poll1");
-    // The query must constrain access to creator OR a matching non-revoked invite.
+    // Access = creator OR (published AND one of: non-revoked invite matching
+    // userId/email, any access grant, or the poll being public).
     expect(arg.where.OR).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ creatorId: invitee.id }),
         expect.objectContaining({
           isPublished: true,
-          invites: {
-            some: expect.objectContaining({
-              status: { not: "REVOKED" },
-              OR: expect.arrayContaining([
-                { userId: invitee.id },
-                { email: invitee.email },
-              ]),
-            }),
-          },
+          OR: expect.arrayContaining([
+            {
+              invites: {
+                some: {
+                  status: { not: "REVOKED" },
+                  OR: [{ userId: invitee.id }, { email: invitee.email }],
+                },
+              },
+            },
+            {
+              accessGrants: {
+                some: { OR: [{ userId: invitee.id }, { email: invitee.email }] },
+              },
+            },
+            { isPublic: true },
+          ]),
         }),
       ])
     );

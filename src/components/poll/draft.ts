@@ -21,6 +21,8 @@ export type DraftPoll = {
   title: string;
   description: string;
   commentVisibility: CommentVisibilityInput;
+  // When true + published, anyone with the link (signed in) can answer.
+  isPublic: boolean;
   questions: DraftQuestion[];
 };
 

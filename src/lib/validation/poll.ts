@@ -88,6 +88,8 @@ export const pollSchema = z.object({
   title: z.string().trim().min(1, "Title is required").max(150),
   description: z.string().trim().max(2000).optional().or(z.literal("")),
   isPublished: z.boolean().default(false),
+  // When true + published, anyone with the link (signed in) may answer.
+  isPublic: z.boolean().default(false),
   commentVisibility: commentVisibilitySchema.default("EDITORS"),
   questions: z
     .array(questionSchema)

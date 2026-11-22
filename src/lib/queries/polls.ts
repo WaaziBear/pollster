@@ -138,18 +138,33 @@ export async function getPollForRespondent(pollId: string, user: SessionUser) {
       OR: [
         { creatorId: user.id },
         {
+          // Published + answer-eligible. Kept in lockstep with canAccessPoll so
+          // the form is only shown to someone who can actually submit.
           isPublished: true,
-          invites: {
-            some: {
-              status: { not: "REVOKED" },
-              OR: [{ userId: user.id }, { email: user.email }],
+          OR: [
+            {
+              invites: {
+                some: {
+                  status: { not: "REVOKED" },
+                  OR: [{ userId: user.id }, { email: user.email }],
+                },
+              },
             },
-          },
+            {
+              // Any grant role (EDITOR or RESULTS_VIEWER) may answer a published
+              // poll — submission is allowed by canAccessPoll to match.
+              accessGrants: {
+                some: { OR: [{ userId: user.id }, { email: user.email }] },
+              },
+            },
+            // Public link: anyone signed in may answer a published public poll.
+            { isPublic: true },
+          ],
         },
         {
-          // EDITORS may reach the poll (incl. drafts) for editing/preview. This
-          // does NOT grant respond access: submission is still invite-gated by
-          // requireInvitee/canAccessPoll in the response action.
+          // EDITORS may additionally reach a DRAFT poll for editing/preview
+          // (no isPublished requirement). Draft preview is read-only; the
+          // publish state still gates real submission in canAccessPoll.
           accessGrants: {
             some: {
               role: "EDITOR",
@@ -235,12 +250,19 @@ export async function getVisibleComments(
         { creatorId: viewer.id },
         {
           isPublished: true,
-          invites: {
-            some: {
-              status: { not: "REVOKED" },
-              OR: [{ userId: viewer.id }, { email: viewer.email }],
+          OR: [
+            {
+              invites: {
+                some: {
+                  status: { not: "REVOKED" },
+                  OR: [{ userId: viewer.id }, { email: viewer.email }],
+                },
+              },
             },
-          },
+            // Public poll: respondents reaching it via the link see comments
+            // per the mode rules below (EDITORS mode still restricts them out).
+            { isPublic: true },
+          ],
         },
         {
           // Editors / results-viewers reach comments per the mode rules below,
