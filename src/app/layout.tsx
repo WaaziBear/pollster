@@ -1,12 +1,15 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans } from "next/font/google";
+import localFont from "next/font/local";
 import "./globals.css";
 
-const jakarta = Plus_Jakarta_Sans({
-  subsets: ["latin"],
+// Self-hosted to avoid next/font/google's build-time fetch, which fails on
+// Vercel when Google serves extensionless font URLs (TypeError: Cannot read
+// properties of null). Variable font covers the full 300-800 weight range.
+const jakarta = localFont({
+  src: "./fonts/plus-jakarta-sans-latin.woff2",
   variable: "--font-sans",
   display: "swap",
-  weight: ["300", "400", "500", "600", "700", "800"],
+  weight: "300 800",
 });
 
 export const metadata: Metadata = {
