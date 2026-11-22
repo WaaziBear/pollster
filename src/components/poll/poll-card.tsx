@@ -63,9 +63,10 @@ export type SharedPollCardData = {
   creator: { email: string; name: string | null };
   _count: { questions: number };
   hasResponded: boolean;
-  // When present, the poll is shared via an access GRANT and the CTA is
-  // role-aware (EDITOR -> Edit; RESULTS_VIEWER -> Results). When null/absent,
-  // the poll is shared via an invite and the CTA is Answer.
+  // When present, the poll is shared via an access GRANT: the card shows the
+  // role action (EDITOR -> Edit; RESULTS_VIEWER -> Results) PLUS an Answer
+  // action, since grantees may also answer a published poll. When null/absent,
+  // the poll is shared via an invite and the only action is Answer.
   role?: "EDITOR" | "RESULTS_VIEWER" | null;
 };
 
@@ -95,22 +96,35 @@ export function SharedPollCard({ poll }: { poll: SharedPollCardData }) {
       <CardContent className="text-sm text-muted-foreground">
         {poll._count.questions} questions
       </CardContent>
-      <CardFooter className="mt-auto">
-        {poll.role === "EDITOR" ? (
+      <CardFooter className="mt-auto flex flex-wrap gap-2">
+        {/* Role-specific management action (grantees only). */}
+        {poll.role === "EDITOR" && (
           <Button asChild size="sm" variant="outline">
             <Link href={`/polls/${poll.id}/edit`}>Edit</Link>
           </Button>
-        ) : poll.role === "RESULTS_VIEWER" ? (
-          <Button asChild size="sm">
+        )}
+        {poll.role === "RESULTS_VIEWER" && (
+          <Button asChild size="sm" variant="outline">
             <Link href={`/polls/${poll.id}/results`}>Results</Link>
           </Button>
-        ) : (
-          <Button asChild size="sm" variant={poll.hasResponded ? "outline" : "cta"}>
-            <Link href={`/polls/${poll.id}`}>
-              {poll.hasResponded ? "View / edit answer" : "Answer poll"}
-            </Link>
-          </Button>
         )}
+        {/* Answer action for everyone with access to the published poll:
+            invitees, editors, and results-viewers. Invitees keep the CTA
+            emphasis and response-aware label; for grantees it's a secondary
+            action (their response state isn't tracked on the dashboard yet). */}
+        <Button
+          asChild
+          size="sm"
+          variant={!poll.role && !poll.hasResponded ? "cta" : "outline"}
+        >
+          <Link href={`/polls/${poll.id}`}>
+            {poll.role
+              ? "Answer"
+              : poll.hasResponded
+                ? "View / edit answer"
+                : "Answer poll"}
+          </Link>
+        </Button>
       </CardFooter>
     </Card>
   );
